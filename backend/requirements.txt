@@ -1,0 +1,15 @@
+# 企业智能票据记账助手 —— 后端依赖
+# 安装：pip install -r backend/requirements.txt
+
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0
+pydantic>=2.9
+pydantic-settings>=2.5
+python-multipart>=0.0.12
+openpyxl>=3.1           # 生成格式化 .xlsx
+pypdf>=5.0              # 文本型 PDF 读取（本地 OCR 兜底方案）
+httpx>=0.27             # 调用百度 OCR HTTP 接口
+
+# 可选：想识别 JPG/PNG 图片发票时再装（约 80MB，含 onnxruntime）
+# rapidocr-onnxruntime>=1.3
