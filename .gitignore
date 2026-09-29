@@ -25,19 +25,18 @@ data/
 
 # ---- 真实发票素材 ----
 # 素材/测试发票/ 里是真实企业的发票，公开仓库会泄露第三方信息。
-# 需要演示数据请用 backend/testdata/测试发票公开版/（脚本生成的脱敏版）。
+# 需要演示数据请用 backend/testdata/测试发票公开版/（完全合成版）。
 素材/
 
-# ---- 脱敏工具的映射表（含真实企业名/税号/人名）----
-# 模板 anonymize_map.example.json 可以提交；真实值只放 .local.json。
-# （* .local 那条已经能覆盖，这里显式写一遍，免得以后有人删了 *.local）
+# ---- 本地隐私扫描词表（含真实企业名/税号/人名）----
+# 只放在本机，供 check_no_real_data.py 使用。
 backend/scripts/anonymize_map.local.json
 
 # check_no_real_data.py 的额外扫描词表（票号/账号/工程名等）
 backend/scripts/check_patterns.local.txt
 
 # ---- 临时探针（下划线开头的脚本/输出，用完即删）----
-# 这类文件是排障时临时写的，输出里经常带本机绝对路径（C:\Users\<用户名>\...），
+# 这类文件是排障时临时写的，输出里经常带本机用户目录绝对路径，
 # 一律不进仓库。
 backend/scripts/_*.py
 backend/scripts/_*.json

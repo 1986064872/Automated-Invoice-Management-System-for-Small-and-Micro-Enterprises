@@ -5,9 +5,9 @@
 
 样本从哪来
 ----------
-用的是**脱敏公开版**样本 `backend/testdata/测试发票公开版/`，不是真实票据。
+用的是**完全合成版**样本 `backend/testdata/测试发票公开版/`，不是真实票据。
 两个好处：
-  ① 仓库里不含任何真实企业名/税号/票号 —— 脚本里的期望值全是假数据，可以放心提交；
+  ① 仓库里不含任何真实票面字段，脚本里的期望值也全是假数据；
   ② 别人 clone 下来就能直接跑（真实票据在 `素材/` 下且已被 gitignore，clone 后压根不存在）。
 """
 
@@ -25,7 +25,7 @@ import httpx
 # （配合后端的 APP_DATA_DIR 就能在一个临时库上跑，完全不碰真实数据）
 BASE = os.environ.get("E2E_BASE", "http://127.0.0.1:8000").rstrip("/") + "/api/v1"
 PROJECT_DIR = Path(__file__).resolve().parents[2]
-# 脱敏公开版样本（已进仓库）
+# 完全合成样本（已进仓库）
 SAMPLE_DIR = Path(__file__).resolve().parents[1] / "testdata" / "测试发票公开版"
 
 PASS = "✔"
@@ -63,12 +63,11 @@ def wait_job(client: httpx.Client, job_id: str, timeout: float = 90.0) -> dict:
 
 
 # 本脚本自己上传的测试票据，按原文件名前缀识别
-# （公开版文件名本身就是脱敏产物；与真实票据的对应关系只存在 gitignored 的
-#   anonymize_map.local.json 里，不写进仓库）
+# （文件名和票面内容都是脚本生成的合成数据，不对应任何真实票据）
 TEST_FILE_PREFIXES = (
-    "09_26322000006800000009",   # 票A（PDF）
-    "14_26322000006800000014",   # 票B（PDF）
-    "02_26322000006200000002",   # 票C（PDF）
+    "09_26000000000000000009",   # 票A（PDF）
+    "14_26000000000000000014",   # 票B（PDF）
+    "02_26000000000000000002",   # 票C（PDF）
     "图片_08",                    # 图片票
     "重复票副本",
 )
@@ -142,9 +141,9 @@ def main() -> int:
 
     print("\n1) 上传混合批次（3 张 PDF + 1 张重复副本 + 1 张图片 + 1 个非法文件）")
     targets = [
-        find_sample("09_26322000006800000009.pdf"),
-        find_sample("14_26322000006800000014.pdf"),
-        find_sample("02_26322000006200000002.pdf"),
+        find_sample("09_26000000000000000009.pdf"),
+        find_sample("14_26000000000000000014.pdf"),
+        find_sample("02_26000000000000000002.pdf"),
         find_sample("图片_08.jpg"),
     ]
     missing = [name for name, path in zip(
@@ -196,18 +195,18 @@ def main() -> int:
     by_number = {i["invoice_number"]: i for i in listing["items"] if i["invoice_number"]}
 
     expectations = {
-        # 三张票的期望值全部来自脱敏公开版样本（金额沿用真实票面，因为脱敏不改金额）
-        "26322000006800000009": {
-            "date": "2026-08-20", "seller": "aa贸易有限公司",
-            "total": 19250.00, "tax": 2214.60, "untaxed": 17035.40,
+        # 全部来自脚本生成的合成样本。
+        "26000000000000000009": {
+            "date": "2026-01-09", "seller": "示例销售方D有限公司",
+            "total": 1073.50, "tax": 123.50, "untaxed": 950.00,
         },
-        "26322000006800000014": {
-            "date": "2026-08-20", "seller": "aa贸易有限公司",
-            "total": 12600.00, "tax": 1449.56, "untaxed": 11150.44,
+        "26000000000000000014": {
+            "date": "2026-01-14", "seller": "示例销售方D有限公司",
+            "total": 1356.00, "tax": 156.00, "untaxed": 1200.00,
         },
-        "26322000006200000002": {
-            "date": "2026-07-29", "seller": "jj贸易有限公司",
-            "total": 25500.00, "tax": 2933.63, "untaxed": 22566.37,
+        "26000000000000000002": {
+            "date": "2026-01-02", "seller": "示例销售方B有限公司",
+            "total": 406.80, "tax": 46.80, "untaxed": 360.00,
         },
     }
     for number, expected in expectations.items():
@@ -243,14 +242,14 @@ def main() -> int:
         )
         # 图片票的期望值同样来自公开版样本（图片_08.jpg）
         expect = {
-            "invoice_number": "23942000000000000001",
-            "invoice_date": "2023-11-01",
-            "seller_name": "mm贸易有限公司",
-            "buyer_name": "nn贸易有限公司",
-            "buyer_tax_id": "987654321987654331",
-            "total_amount": 100.0,
-            "amount_without_tax": 99.01,
-            "tax_amount": 0.99,
+            "invoice_number": "26000000000000000020",
+            "invoice_date": "2026-01-20",
+            "seller_name": "示例销售方E有限公司",
+            "buyer_name": "示例购买方E有限公司",
+            "buyer_tax_id": "91310000MA00000020",
+            "total_amount": 303.0,
+            "amount_without_tax": 300.0,
+            "tax_amount": 3.0,
         }
         bad = []
         for field, want in expect.items():
@@ -314,7 +313,7 @@ def main() -> int:
     check(ledger["summary"]["total_amount"] > 0, "汇总金额正常",
           f"价税合计合计 ¥{ledger['summary']['total_amount']}")
 
-    month = "2026-08"
+    month = "2026-01"
     month_ledger = client.get(f"{BASE}/ledger", params={"month": month}).json()
     check(month_ledger["total"] > 0, f"按月份 {month} 筛选可用",
           f"{month_ledger['total']} 条 / ¥{month_ledger['summary']['total_amount']}")
@@ -356,7 +355,7 @@ def main() -> int:
               f"{preview['invoice_count']} vs {len(matched)}")
 
         units = {r[8] for r in rows}
-        check(units == {"台"}, "单位列取到了票面单位", str(units))
+        check(units == {"件"}, "单位列取到了票面单位", str(units))
 
         quantities = sorted(r[9] for r in rows if r[9] is not None)
         expected_qty = sorted(

@@ -18,7 +18,7 @@ STATUS_ALL = "all"
 
 
 def month_bounds(month: str) -> tuple[str, str]:
-    """'2026-08' → ('2026-08-01', '2026-08-31')。"""
+    """'2026-01' → ('2026-01-01', '2026-01-31')。"""
     year, mon = month.split("-")
     y, m = int(year), int(mon)
     first = date(y, m, 1)

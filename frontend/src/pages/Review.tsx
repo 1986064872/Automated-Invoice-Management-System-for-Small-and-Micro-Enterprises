@@ -142,6 +142,10 @@ function emptyItem(): ItemForm {
   }
 }
 
+/** 「自定义分类」在下拉里的哨兵值。真实分类名不会等于它，所以拿来当分支标记是安全的。 */
+const CUSTOM_CATEGORY = '__custom__'
+
+
 function toForm(invoice: Invoice): FormState {
   const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
   return {
@@ -426,6 +430,13 @@ export default function Review() {
   const [saveAsRule, setSaveAsRule] = useState(true)
   const [showRaw, setShowRaw] = useState(false)
   const [raw, setRaw] = useState<unknown>(null)
+  /**
+   * 是否处于「自定义分类」模式。
+   *
+   * 为什么需要它：光靠「值不在预设列表里」判断不够 —— 用户刚点「自定义…」时值还是空的，
+   * 那一刻输入框会立刻消失（因为空值不算自定义）。所以用一个显式开关记住这个意图。
+   */
+  const [customCategory, setCustomCategory] = useState(false)
 
   const current: Invoice | undefined = useMemo(() => {
     if (!invoices.length) return undefined
@@ -439,11 +450,18 @@ export default function Review() {
   useEffect(() => {
     if (current) {
       setForm(toForm(current))
+      setCustomCategory(false)
       setDirty(false)
     } else {
       setForm(null)
     }
   }, [current])
+
+  // 预设分类列表。值不落在预设里（或用户刚点了「自定义…」）就走自定义输入框。
+  const categories = options?.categories ?? []
+  const isCustomCategory =
+    customCategory ||
+    (!!form?.expense_category && !categories.includes(form.expense_category))
 
   const go = useCallback(
     (delta: number) => {
@@ -1045,21 +1063,42 @@ export default function Review() {
               }
             />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="费用分类">
+              <Field label="费用分类" hint={isCustomCategory ? '当前是自定义分类，也会随「保存为规则」一起沉淀' : undefined}>
                 <Select
-                  value={form.expense_category}
+                  value={isCustomCategory ? CUSTOM_CATEGORY : form.expense_category}
                   onChange={(e) => {
-                    setForm({ ...form, expense_category: e.target.value })
+                    const v = e.target.value
+                    if (v === CUSTOM_CATEGORY) {
+                      // 切到自定义：清掉预设值，免得输入框里还留着一个旧分类让人误会
+                      setCustomCategory(true)
+                      setForm({ ...form, expense_category: '' })
+                    } else {
+                      setCustomCategory(false)
+                      setForm({ ...form, expense_category: v })
+                    }
                     setDirty(true)
                   }}
                 >
+                  <option value={CUSTOM_CATEGORY}>✎ 自定义…</option>
                   <option value="">（未选择）</option>
-                  {options?.categories.map((c) => (
+                  {categories.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
                   ))}
                 </Select>
+                {isCustomCategory ? (
+                  <TextInput
+                    className="mt-2"
+                    autoFocus
+                    placeholder="输入自定义分类名，如：安全生产费"
+                    value={form.expense_category}
+                    onChange={(e) => {
+                      setForm({ ...form, expense_category: e.target.value })
+                      setDirty(true)
+                    }}
+                  />
+                ) : null}
               </Field>
               <Field label="会计科目" hint="可直接手填，如：管理费用—差旅费">
                 <TextInput

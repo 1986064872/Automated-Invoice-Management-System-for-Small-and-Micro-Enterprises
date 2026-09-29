@@ -1,7 +1,7 @@
 """开发期自检脚本：拿真实票据跑一遍解析，看字段抽得准不准。
 
 用法：
-    python backend/scripts/parse_check.py "素材/中国华兴招远项目 电视机19250元.pdf"
+    python backend/scripts/parse_check.py "素材/示例项目_示例设备_12345元.pdf"
     python backend/scripts/parse_check.py            # 不传参数就扫 素材/ 目录下的所有票
 """
 

@@ -36,7 +36,7 @@ def main() -> int:
     print("逐项核对前端用到的字段")
 
     # ---------- 概览 ----------
-    dash = client.get(f"{BASE}/dashboard/summary", params={"month": "2026-08"}).json()
+    dash = client.get(f"{BASE}/dashboard/summary", params={"month": "2026-01"}).json()
     check_keys(
         "Dashboard",
         dash,
@@ -155,7 +155,7 @@ def main() -> int:
         check_keys("providers[]", providers["providers"][0], ["name", "display_name", "ready", "note"])
 
     # ---------- 导出预览 ----------
-    preview = client.get(f"{BASE}/exports/preview", params={"month": "2026-08"}).json()
+    preview = client.get(f"{BASE}/exports/preview", params={"month": "2026-01"}).json()
     check_keys("exports/preview", preview, ["count", "invoice_count", "total_amount", "file_name"])
 
     # ---------- 原票读取 ----------

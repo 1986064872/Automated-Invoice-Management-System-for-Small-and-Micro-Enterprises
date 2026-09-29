@@ -14,7 +14,7 @@
     python backend/scripts/check_no_real_data.py HEAD         # 扫某个提交
     python backend/scripts/check_no_real_data.py <某个ref>     # 阳性对照
 
-真实值从哪来
+扫描词表从哪来
 ------------
 - `anonymize_map.local.json`（gitignored）：公司名 / 税号 / 人名
 - `check_patterns.local.txt`（gitignored，可选）：票号、银行账号、工程名等，一行一个
@@ -50,7 +50,7 @@ def collect_patterns() -> list[str]:
         for bucket in ("company_name", "tax_id", "person_name"):
             patterns += list(rules.get(bucket, {}))
     else:
-        print(f"⚠️ 没找到 {MAP_LOCAL.name}（真实值映射表），只能用兜底模式")
+        print(f"⚠️ 没找到 {MAP_LOCAL.name}（本地隐私扫描词表），只能用兜底模式")
     if EXTRA_LOCAL.exists():
         patterns += [
             line.strip()
@@ -73,7 +73,13 @@ def scan(patterns: list[str], rev: str | None) -> tuple[int, list[str]]:
         cmd += ["--"]
         proc = subprocess.run(cmd, cwd=REPO_DIR, capture_output=True,
                               text=True, encoding="utf-8", errors="replace")
-        return proc.returncode, [l for l in proc.stdout.splitlines() if l.strip()]
+        hits = [
+            line
+            for line in proc.stdout.splitlines()
+            if line.strip() and "backend/scripts/check_no_real_data.py:" not in line
+        ]
+        code = 0 if hits else 1
+        return code if proc.returncode == 0 else proc.returncode, hits
     finally:
         tmp.unlink(missing_ok=True)
 

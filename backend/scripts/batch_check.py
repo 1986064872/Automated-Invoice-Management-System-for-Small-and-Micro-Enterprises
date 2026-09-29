@@ -68,45 +68,45 @@ def self_test() -> list[str]:
 
     # ---------- 用例一：负数折扣行 ----------
     frags = header + row(
-        230.0, "*塑料制品*电熔直接", "dn110", "只", "44", "13.8938053097345", "611.33", "13%", "79.47"
+        230.0, "*示例材料*示例管件甲", "SPEC-110", "只", "4", "100.00", "400.00", "13%", "52.00"
     ) + row(
-        214.0, "*塑料制品*电熔90度弯头", "dn200", "只", "10", "77.5752212389381", "775.75", "13%", "100.85"
+        214.0, "*示例材料*示例管件乙", "SPEC-200", "只", "2", "200.00", "400.00", "13%", "52.00"
     ) + row(
-        198.0, "*塑料制品*电熔90度弯头", "dn200", "只", "10", "77.5752212389381", "-61.95", "13%", "-8.05"
+        198.0, "*示例材料*示例管件乙", "SPEC-200", "只", "2", "100.00", "-200.00", "13%", "-26.00"
     ) + [
         (43.9, 150.0, "合"),
         (60.0, 150.0, "计"),
-        (540.0, 150.0, "¥1325.13"),
-        (660.0, 150.0, "¥172.27"),
+        (540.0, 150.0, "¥600.00"),
+        (660.0, 150.0, "¥78.00"),
     ]
     result = parse_invoice_fragments(frags, provider="selftest")
     if len(result.items) != 3:
         failures.append(f"[负数行] 明细行数应为 3，实际 {len(result.items)}")
     else:
         last = result.items[-1]
-        if last.amount != -61.95:
-            failures.append(f"[负数行] 金额应为 -61.95，实际 {last.amount}")
-        if last.tax_amount != -8.05:
-            failures.append(f"[负数行] 税额应为 -8.05，实际 {last.tax_amount}")
-        if result.items[1].item_name != "*塑料制品*电熔90度弯头":
+        if last.amount != -200.00:
+            failures.append(f"[负数行] 金额应为 -200.00，实际 {last.amount}")
+        if last.tax_amount != -26.00:
+            failures.append(f"[负数行] 税额应为 -26.00，实际 {last.tax_amount}")
+        if result.items[1].item_name != "*示例材料*示例管件乙":
             failures.append(f"[负数行] 上一行名称被污染：{result.items[1].item_name!r}")
 
     # ---------- 用例二：拉丁单位 PCS ----------
     frags = header + row(
         230.0,
-        "*计算机网络设备*H3CUAP632H-内置天线双频四流802.11ax/ac/n1500M面板型无线接入点(2*GE)",
-        "H3C UAP632H",
+        "*示例设备*示例无线网络设备",
+        "DEMO-AP-01",
         "PCS",
         "10",
-        "161.0619469026549",
-        "1610.62",
+        "100.00",
+        "1000.00",
         "13%",
-        "209.38",
+        "130.00",
     ) + [
         (43.9, 150.0, "合"),
         (60.0, 150.0, "计"),
-        (540.0, 150.0, "¥1610.62"),
-        (660.0, 150.0, "¥209.38"),
+        (540.0, 150.0, "¥1000.00"),
+        (660.0, 150.0, "¥130.00"),
     ]
     result = parse_invoice_fragments(frags, provider="selftest")
     if len(result.items) != 1:
@@ -115,8 +115,8 @@ def self_test() -> list[str]:
         item = result.items[0]
         if item.unit != "PCS":
             failures.append(f"[拉丁单位] 单位应为 PCS，实际 {item.unit!r}")
-        if item.specification != "H3C UAP632H":
-            failures.append(f"[拉丁单位] 规格应只含 H3C UAP632H，实际 {item.specification!r}")
+        if item.specification != "DEMO-AP-01":
+            failures.append(f"[拉丁单位] 规格应只含 DEMO-AP-01，实际 {item.specification!r}")
         if "PCS" in (item.specification or ""):
             failures.append("[拉丁单位] 单位被拼进规格型号了")
         if item.quantity != 10:
@@ -144,23 +144,23 @@ def self_test() -> list[str]:
     ]
     frags = header_split + [
         (12.76, 230.0, "*"),
-        (17.26, 230.0, "非金属矿物制品"),
+        (17.26, 230.0, "示例制品"),
         (80.25, 230.0, "*"),
-        (84.75, 230.0, "台下盆"),
-        (119.05, 230.0, "HDLU012"),
-        (150.55, 230.0, "台下盆"),
+        (84.75, 230.0, "示例台盆"),
+        (119.05, 230.0, "DEMO-012"),
+        (150.55, 230.0, "示例台盆"),
         (198.17, 230.0, "个"),
-        (281.55, 230.0, "17"),
-        (297.41, 230.0, "234.513274336283"),
-        (402.19, 230.0, "3986.73"),
+        (281.55, 230.0, "2"),
+        (297.41, 230.0, "200.00"),
+        (402.19, 230.0, "400.00"),
         (465.21, 230.0, "13%"),
-        (555.51, 230.0, "518.27"),
+        (555.51, 230.0, "52.00"),
         # 折行：名称的尾巴跑到下一行
-        (12.76, 214.0, "盆架"),
+        (12.76, 214.0, "支架"),
         (43.9, 150.0, "合"),
         (60.0, 150.0, "计"),
-        (406.69, 150.0, "¥3986.73"),
-        (551.4, 150.0, "¥518.27"),
+        (406.69, 150.0, "¥400.00"),
+        (551.4, 150.0, "¥52.00"),
     ]
     result = parse_invoice_fragments(frags, provider="selftest")
     if len(result.items) != 1:
@@ -169,12 +169,12 @@ def self_test() -> list[str]:
         item = result.items[0]
         if item.unit != "个":
             failures.append(f"[拆字表头] 单位应为 个，实际 {item.unit!r}")
-        if item.item_name != "*非金属矿物制品*台下盆盆架":
-            failures.append(f"[拆字表头] 名称应为 台下盆+折行盆架，实际 {item.item_name!r}")
-        if item.specification != "HDLU012 台下盆":
-            failures.append(f"[拆字表头] 规格应为 HDLU012 台下盆，实际 {item.specification!r}")
-        if item.quantity != 17:
-            failures.append(f"[拆字表头] 数量应为 17，实际 {item.quantity}")
+        if item.item_name != "*示例制品*示例台盆支架":
+            failures.append(f"[拆字表头] 名称应为 示例台盆+折行支架，实际 {item.item_name!r}")
+        if item.specification != "DEMO-012 示例台盆":
+            failures.append(f"[拆字表头] 规格应为 DEMO-012 示例台盆，实际 {item.specification!r}")
+        if item.quantity != 2:
+            failures.append(f"[拆字表头] 数量应为 2，实际 {item.quantity}")
 
     # ---------- 用例四：名称折行「跨」数值行（一段在上、一段在下） ----------
     # 实测一份图片票：单元格里的名称折了两行，数值列垂直居中，
@@ -191,34 +191,34 @@ def self_test() -> list[str]:
     ]
     frags = img_header + [
         # 名称第一段：在数值行上方
-        (222.83, 560.0, "*信息安全产品*管柱式布料机防碰"),
+        (222.83, 560.0, "*示例设备*示例设备总成防碰"),
         # 数值行（锚点）
-        (409.54, 540.0, "DX-GZ-3"),
+        (409.54, 540.0, "DEMO-GZ-3"),
         (594.21, 540.0, "套"),
         (824.53, 540.0, "5"),
-        (928.79, 540.0, "47214.1592920354"),
-        (1165.93, 540.0, "236070.80"),
+        (928.79, 540.0, "1000.00"),
+        (1165.93, 540.0, "5000.00"),
         (1274.28, 540.0, "13%"),
-        (1501.87, 540.0, "30689.20"),
+        (1501.87, 540.0, "650.00"),
         # 名称第二段：在数值行下方
         (71.50, 520.0, "撞系统"),
         # 表尾噪声（不应被吸进名称）
         (1291.48, 420.0, "重选发票"),
         # 合计行
         (198.30, 380.0, "合计"),
-        (1155.03, 380.0, "¥236070.80"),
-        (1471.89, 380.0, "¥30689.20"),
+        (1155.03, 380.0, "¥5000.00"),
+        (1471.89, 380.0, "¥650.00"),
     ]
     result = parse_invoice_fragments(frags, provider="selftest")
     if len(result.items) != 1:
         failures.append(f"[名称跨行] 明细行数应为 1，实际 {len(result.items)}")
     else:
         item = result.items[0]
-        want_name = "*信息安全产品*管柱式布料机防碰撞系统"
+        want_name = "*示例设备*示例设备总成防碰撞系统"
         if item.item_name != want_name:
             failures.append(f"[名称跨行] 名称应为 {want_name!r}，实际 {item.item_name!r}")
-        if item.specification != "DX-GZ-3":
-            failures.append(f"[名称跨行] 规格应为 DX-GZ-3，实际 {item.specification!r}")
+        if item.specification != "DEMO-GZ-3":
+            failures.append(f"[名称跨行] 规格应为 DEMO-GZ-3，实际 {item.specification!r}")
         if item.unit != "套":
             failures.append(f"[名称跨行] 单位应为 套，实际 {item.unit!r}")
         if item.quantity != 5:
@@ -240,26 +240,26 @@ def self_test() -> list[str]:
     glue_rest = [
         (496.27, 540.0, "套"),
         (682.16, 540.0, "2"),
-        (767.91, 540.0, "58984.0707964602"),
-        (960.44, 540.0, "117968.14"),
+        (767.91, 540.0, "1000.00"),
+        (960.44, 540.0, "2000.00"),
         (1048.41, 540.0, "13%"),
-        (1233.20, 540.0, "15335.86"),
+        (1233.20, 540.0, "260.00"),
         (174.83, 380.0, "合计"),
-        (951.04, 380.0, "¥117968.14"),
-        (1206.64, 380.0, "¥15335.86"),
+        (951.04, 380.0, "¥2000.00"),
+        (1206.64, 380.0, "¥260.00"),
     ]
     frags = glue_header + [
-        (230.15, 540.0, "*信息安全产品*汽车泵防碰撞系统 DX-QCB-7"),
+        (230.15, 540.0, "*示例设备*示例设备总成 DEMO-QCB-7"),
     ] + glue_rest
     result = parse_invoice_fragments(frags, provider="selftest")
     if len(result.items) != 1:
         failures.append(f"[名称粘型号] 明细行数应为 1，实际 {len(result.items)}")
     else:
         item = result.items[0]
-        if item.item_name != "*信息安全产品*汽车泵防碰撞系统":
-            failures.append(f"[名称粘型号] 名称应为 汽车泵防碰撞系统，实际 {item.item_name!r}")
-        if item.specification != "DX-QCB-7":
-            failures.append(f"[名称粘型号] 规格应为 DX-QCB-7，实际 {item.specification!r}")
+        if item.item_name != "*示例设备*示例设备总成":
+            failures.append(f"[名称粘型号] 名称应为 示例设备总成，实际 {item.item_name!r}")
+        if item.specification != "DEMO-QCB-7":
+            failures.append(f"[名称粘型号] 规格应为 DEMO-QCB-7，实际 {item.specification!r}")
 
     # 反向用例：尾巴含中文时**不能**乱拆（宁可不拆也别拆错）
     frags = glue_header + [

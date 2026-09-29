@@ -1,8 +1,9 @@
 # 企业智能票据记账助手
 
-> 本地运行的发票识别记账工具。拖进一批电子发票，自动读出字段、按规则校验、集中复核，导出 Excel —— **票据全程不出本机。**
+> 本地运行的发票识别记账工具。拖进一批电子发票，自动读出字段、按规则校验、集中复核，导出 Excel。
+> 默认模式下票据全程不出本机；只有主动配置百度云 OCR 时，才会把待识别文件发送给云端。
 
-后端起 7.9k 行、前端 4.6k 行，从零独立完成（含 OCR 识别核心）。
+后端约 7.5k 行、前端约 4.4k 行，从零独立完成（含 OCR 识别核心）。
 
 ```
 上传 → 识别 → 规则校验 → 人工复核 → 生成账目 → 导出 Excel
@@ -41,15 +42,25 @@ PaddleOCR 装在另一个 Python 版本里、带 1GB+ CUDA 运行时，跨版本
 
 ## 快速开始
 
-```bash
+```powershell
 python -m venv .venv
-.venv\Scripts\pip install -r backend\requirements.txt
-cd frontend && npm install && npm run build && cd ..
+.\.venv\Scripts\python -m pip install -r backend\requirements.txt
+cd frontend
+npm install
+npm run build
+cd ..
 ```
 
 然后双击 `start.bat` —— 浏览器自动打开 <http://127.0.0.1:8000>，接口文档在 `/docs`。
 
 图片票识别是可选的（需要 PaddleOCR 环境）。没装也能跑：会提示人工录入，**绝不丢原文件**。免安装绿色版（解压双击即用，不需 Python/Node、不联网）在打包中。
+
+仓库中的 `backend/testdata/测试发票公开版/` 是由脚本从零生成的完全合成样本，
+不读取真实票据，也不保留原票的项目、型号、数量、单价或金额：
+
+```powershell
+python backend/scripts/make_public_samples.py
+```
 
 ---
 
@@ -82,12 +93,14 @@ cd frontend && npm install && npm run build && cd ..
 
 | 脚本 | 覆盖 | 何时必跑 |
 |---|---|---|
-| `parse_check.py` | 识别准确度，29 张真实样本，不启服务 | 改解析器 |
-| `batch_check.py` | 批量质检 + 4 个合成回归用例（负数行/拉丁单位/拆字表头/名称跨行） | 改解析器 |
+| `parse_check.py` | 本地私有票据识别准确度；样本在 gitignored 的 `素材/` 中，不随仓库发布 | 改解析器 |
+| `batch_check.py` | 批量质检 + 5 个合成回归用例（负数行/拉丁单位/拆字表头/名称跨行/名称粘型号） | 改解析器 |
+| `e2e_check.py` | 使用仓库内完全合成样本，clone 后即可跑端到端流程 | 发布前 |
 | `contract_check.py` | 前后端字段契约 | 改接口字段 |
-| `e2e_check.py` | 端到端 50 项（上传→识别→复核→入账→账本→导出） | 发布前 |
 
 `contract_check.py` 存在的原因：**FastAPI 的 `response_model` 会静默剥离未声明的字段** —— 接口返回 200、字段悄悄没了，TypeScript 编译也发现不了。
+
+`parse_check.py` 只在本地对 gitignored 的 `素材/` 运行，干净克隆后没有真实样本属于预期行为。
 
 **改解析器的强制流程**：先跑回归 → **再逐票 diff `(名称, 规格, 单位, 数量, 金额)`** → 最后才重跑历史票。
 
@@ -105,7 +118,9 @@ React 19 · TypeScript · Vite · Tailwind v4 ｜ Python 3.13 · FastAPI · Pyda
 
 ## 数据与隐私
 
-票据不出本机、默认零调用费用。云 OCR 是可选插件：密钥只存后端环境变量，不返回前端、不进日志，带日调用上限防意外费用。真实票据与导出文件全部 gitignore —— **仓库里不含任何真实票据信息，本文示例均为占位符。**
+默认本地模式不调用云服务、零调用费用。百度云 OCR 是显式可选项：启用后待识别文件会发送给百度；密钥只存后端环境变量，不返回前端、不进日志，并有日调用上限。
+
+真实票据、原始素材、数据库和导出文件全部通过 `.gitignore` 排除。仓库内跟踪的 20 个 PDF 与 8 张图片均由 `make_public_samples.py` 从零生成，项目、型号、数量、单价、金额和购销方信息全部为合成占位数据，不对应任何真实票据。
 
 ---
 
