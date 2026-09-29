@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,7 +19,9 @@ import pymupdf
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 OUT_DIR = BACKEND_DIR / "testdata" / "测试发票公开版"
-FONT_FILE = Path(r"C:\Windows\Fonts\simsun.ttc")
+FONT_FILE = Path(
+    os.environ.get("PUBLIC_SAMPLE_FONT_FILE") or r"C:\Windows\Fonts\simsun.ttc"
+)
 PAGE_WIDTH = 842.0
 PAGE_HEIGHT = 595.0
 

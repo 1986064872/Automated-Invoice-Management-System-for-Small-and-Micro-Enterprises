@@ -1,127 +1,271 @@
 # 企业智能票据记账助手
 
-> 本地运行的发票识别记账工具。拖进一批电子发票，自动读出字段、按规则校验、集中复核，导出 Excel。
-> 默认模式下票据全程不出本机；只有主动配置百度云 OCR 时，才会把待识别文件发送给云端。
+<div align="center">
 
-后端约 7.5k 行、前端约 4.4k 行，从零独立完成（含 OCR 识别核心）。
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111111)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)
+![Local first](https://img.shields.io/badge/Local--first-default-2EA44F)
+![Status](https://img.shields.io/badge/Status-V1%20MVP-orange)
 
+**本地运行的发票识别记账工具：上传、识别、校验、复核、入账、导出 Excel。**
+
+默认模式下票据不离开本机。只有主动配置百度云 OCR 时，待识别文件才会发送到云端。
+
+</div>
+
+<p align="center">
+  <img src="./docs/images/dashboard.png" width="49%" alt="首页概览">
+  <img src="./docs/images/review.png" width="49%" alt="复核工作台">
+</p>
+
+<p align="center">
+  <img src="./docs/images/ledger.png" width="78%" alt="账本与导出">
+</p>
+
+## 项目简介
+
+这是一个面向小微企业、代账人员和个人票据管理的本地化工具。它不依赖大模型做财务判断，而是把识别、规则校验和人工复核拆开处理：
+
+```text
+上传 -> 识别 -> 规则校验 -> 人工复核 -> 生成账目 -> 导出 Excel
 ```
-上传 → 识别 → 规则校验 → 人工复核 → 生成账目 → 导出 Excel
+
+设计原则：
+
+- OCR 负责把票面变成结构化字段。
+- 规则负责金额、票号、重复票等确定性校验。
+- 人工负责最终确认，不承诺“无人审核自动入账”。
+- 真实票据、数据库和导出文件默认留在本机。
+
+## 核心能力
+
+| 能力 | 说明 |
+|---|---|
+| 批量上传 | 支持 PDF、JPG、JPEG、PNG，单批最多 50 个文件 |
+| PDF 文本层解析 | 直接从电子发票文本层提取坐标，速度快、不联网 |
+| 图片 OCR | 可选 PaddleOCR GPU，也可接入 RapidOCR 或百度云 OCR |
+| 坐标版面解析 | 按表头坐标划分名称、规格、单位、数量、单价、金额和税额列 |
+| 规则校验 | 金额勾稽、必填字段、票号格式、重复票和低置信度提醒 |
+| 人工复核 | 左右分栏查看原票与识别字段，修改结果实时重算风险 |
+| 重复识别 | 用号码、日期、金额和销方税号生成业务指纹，不依赖文件哈希 |
+| 分类规则 | 关键词规则自动分类，也可把人工修改沉淀为自定义规则 |
+| 账本管理 | 按月份、状态、分类和关键词筛选，支持批量导出与删除 |
+| Excel 导出 | 按明细行展开，包含单位、数量、单价、分类和会计科目 |
+| 回收站 | 删除票据时移入 `data/trash/`，避免误删原票 |
+
+## 工作流程
+
+```mermaid
+flowchart LR
+    A[浏览器上传] --> B[FastAPI]
+    B --> C{文件类型}
+    C -->|PDF| D[文本层解析]
+    C -->|图片| E[PaddleOCR / RapidOCR / 百度云]
+    D --> F[坐标解析器]
+    E --> F
+    F --> G[分类与规则校验]
+    G --> H[待复核]
+    H --> I[人工确认]
+    I --> J[账本]
+    J --> K[Excel 导出]
 ```
 
-> 设计原则：**OCR 负责识别，规则负责确定性校验，人工负责最终确认。**
-> 会计场景里机器只做它能保证的事 —— 不承诺「无人审核自动入账」。
-
-**目录** · [三个亮点](#三个亮点) · [快速开始](#快速开始) · [架构与取舍](#架构与取舍) · [自检](#自检) · [技术栈](#技术栈)
-
-<!-- TODO(截图)：截 3 张图放 docs/images/ 后取消注释：上传台 / 复核工作台 / 账本导出 -->
-
----
-
-## 三个亮点
-
-**1 · 不用正则扫全文，用坐标还原版面**
-
-电子发票 PDF 里的文字是绘图指令流，提取顺序是「先画所有标签、再画所有数值」。正则扫全文，购买方和销售方必然串位。
-
-所以识别核心是一个**纯函数坐标解析器**：把文字矩阵和变换矩阵**合成**拿到真实坐标 → 按 y 聚行 → 用**表头标签的中点**定列边界 → 明细行从右往左逐列抠出税额/税率/金额/单价/数量/单位，剩下最左边就是项目名称 + 规格。
-
-表头位置是稳定的结构信息，比任何关键词表都可靠。同一套解析器同时服务 PDF 文本层、PaddleOCR、RapidOCR、百度云四种数据源。
-
-**2 · GPU 框架不进 Web 进程：常驻子进程 + JSON 行协议**
-
-PaddleOCR 装在另一个 Python 版本里、带 1GB+ CUDA 运行时，跨版本无法 `import`。方案是拉起一个常驻工作进程，用 stdin/stdout 传 JSON：模型只加载一次，请求串行化（单卡不并发），**空闲 10 分钟自动退出把显存还回去**，关服务不留孤儿进程。
-
-**3 · 删除即回收站，自检脚本不碰真实数据**
-
-早期我的端到端自检为了「干净环境」开头就清库 —— 而库里是真实发票，连原票一起删了。
-
-换来的三条硬约束：删除一律移入 `data/trash/`；自检发现库里有**任意一条非测试数据就整体中止**；数据目录可用 `APP_DATA_DIR` 重定向，测试与生产物理隔离。
-
----
+**这里有意不做全自动入账。** 发票识别存在 OCR 误差，金额和税号一旦识别错误，自动入账比多一步复核更危险。V1 的目标是把重复操作压缩掉，同时把最终确认权留给使用者。
 
 ## 快速开始
+
+### 环境要求
+
+- Windows 10/11
+- Python 3.11+
+- Node.js 20+
+
+### 1. 安装后端
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -r backend\requirements.txt
+```
+
+### 2. 构建前端
+
+```powershell
 cd frontend
 npm install
 npm run build
 cd ..
 ```
 
-然后双击 `start.bat` —— 浏览器自动打开 <http://127.0.0.1:8000>，接口文档在 `/docs`。
+### 3. 启动
 
-图片票识别是可选的（需要 PaddleOCR 环境）。没装也能跑：会提示人工录入，**绝不丢原文件**。免安装绿色版（解压双击即用，不需 Python/Node、不联网）在打包中。
+双击根目录的 `start.bat`，浏览器会自动打开：
 
-仓库中的 `backend/testdata/测试发票公开版/` 是由脚本从零生成的完全合成样本，
-不读取真实票据，也不保留原票的项目、型号、数量、单价或金额：
+- 应用地址：<http://127.0.0.1:8000>
+- 接口文档：<http://127.0.0.1:8000/docs>
+
+### 开发模式
+
+前后端分开运行时：
+
+```text
+dev_backend.bat    # FastAPI + reload，端口 8000
+dev_frontend.bat   # Vite + HMR，端口 5173
+```
+
+## OCR 策略
+
+| 文件/环境 | 默认方案 | 特点 |
+|---|---|---|
+| 电子发票 PDF | `pypdf` 文本层 | 不联网、速度快、坐标最稳定 |
+| JPG/PNG | PaddleOCR | 本地 GPU 识别，适合批量图片票 |
+| 无 PaddleOCR 环境 | RapidOCR 或人工录入 | RapidOCR 需额外安装，图片仍会保留 |
+| 云端兜底 | 百度云 OCR | 显式配置密钥后启用，有日调用上限 |
+
+PDF 的推荐路径是“文本层优先，OCR 兜底”。图片票不应伪装成 PDF 文本解析，因为扫描件没有可靠文字层，静默失败比明确提示人工录入风险更大。
+
+## 系统架构
+
+```text
+React 19 + TypeScript + Vite
+             |
+          /api/v1
+             |
+          FastAPI
+             |
+    +--------+---------+
+    |                  |
+  OCR 适配层         业务服务层
+    |                  |
+  PDF/Paddle/       分类 · 校验 · 去重
+  Rapid/Baidu       账本 · 导出 · 回收站
+    |                  |
+    +--------+---------+
+             |
+       SQLite + SQLAlchemy 2.0
+```
+
+核心模块：
+
+- `backend/app/ocr/`：PDF、PaddleOCR、RapidOCR 和百度云供应商适配。
+- `backend/app/ocr/parser.py`：纯函数坐标解析器，PDF 与图片 OCR 共用。
+- `backend/app/services/`：流水线、分类、校验、去重、账本、导出和存储。
+- `frontend/src/pages/`：首页、票据中心、复核工作台、账本和设置。
+
+## 项目结构
+
+```text
+.
+|-- backend/
+|   |-- app/
+|   |   |-- ocr/          # 文本层、PaddleOCR、RapidOCR、百度云
+|   |   |-- routers/      # REST API
+|   |   |-- services/     # 业务流水线与规则
+|   |   `-- models.py     # SQLAlchemy 模型
+|   |-- scripts/          # 自检、样本生成、导入导出脚本
+|   |-- testdata/         # 完全合成的公开样本
+|   `-- requirements.txt
+|-- frontend/
+|   `-- src/
+|-- docs/images/          # README 截图
+|-- data/                 # 本地运行数据，默认不提交
+|-- start.bat
+`-- README.md
+```
+
+## 配置
+
+复制环境变量模板：
 
 ```powershell
-python backend/scripts/make_public_samples.py
+Copy-Item backend\.env.example backend\.env
 ```
 
----
+常用配置：
 
-## 架构与取舍
+| 变量 | 默认值 | 说明 |
+|---|---:|---|
+| `OCR_PROVIDER` | `auto` | `auto`、`local` 或 `baidu` |
+| `BAIDU_API_KEY` | 空 | 百度 OCR API Key |
+| `BAIDU_SECRET_KEY` | 空 | 百度 OCR Secret Key |
+| `DAILY_OCR_LIMIT` | `200` | 服务端每日云 OCR 上限 |
+| `MAX_FILE_SIZE_MB` | `20` | 单文件大小上限 |
+| `MAX_BATCH_FILES` | `50` | 单批文件数上限 |
+| `APP_DATA_DIR` | `./data` | 数据目录重定向 |
+| `APP_DB_PATH` | `./data/app.db` | 数据库路径重定向 |
 
-```
-前端 React 19 + TS ──/api/v1──▶ FastAPI ─┬─ ocr/      供应商适配层（4 个引擎 + 自动兜底链）
-                                          │             └ parser.py ★ 坐标版面解析器（纯函数）
-                                          ├─ services/ 流水线 · 分类 · 校验 · 去重 · 账本 · 导出
-                                          └─ SQLite + SQLAlchemy 2.0
-```
-
-兜底链：图片 `PaddleOCR(GPU) → RapidOCR(CPU) → 人工录入`，PDF `文本层 → PaddleOCR`。走兜底会在风险提示里留痕，让用户知道数据是怎么来的。
-
-**几个我觉得值得说的取舍**（每条在代码注释里都写了为什么）：
-
-| 选择 | 理由 |
-|---|---|
-| 去重用业务指纹，不用文件哈希 | 同一张票下载两次、拍照两次，哈希不同但业务上同一张。全电发票用 `号码+日期+价税合计+销方税号` |
-| 坐标统一归一化到 800 单位高 | PDF 以「点」为单位、OCR 返回像素。不归一化，同一张票换个分辨率就解析出不同结果 |
-| 服务端权威 + 前端实时重算校验 | 服务端 `risk_flags` 是保存那一刻的快照，只显示它会「改对了提示还挂着」 |
-| 分类用关键词规则，不上 LLM | 可解释、可修正、零成本。用户改一次类别就能沉淀成自定义规则 |
-| 折行只认「紧邻」，不按距离找最近锚点 | 行距只有 20px 上下，单元格内折行与相邻表格行的距离是同一量级，阈值区分不了 |
-
----
+`APP_DATA_DIR` 和 `APP_DB_PATH` 主要用于隔离自检或演示环境，避免误操作正在使用的真实账目。
 
 ## 自检
 
-识别类项目最怕「改一处坏三处，表面还看不出来」。每类改动都有对应验收：
+项目附带多条验收路径：
 
-| 脚本 | 覆盖 | 何时必跑 |
-|---|---|---|
-| `parse_check.py` | 本地私有票据识别准确度；样本在 gitignored 的 `素材/` 中，不随仓库发布 | 改解析器 |
-| `batch_check.py` | 批量质检 + 5 个合成回归用例（负数行/拉丁单位/拆字表头/名称跨行/名称粘型号） | 改解析器 |
-| `e2e_check.py` | 使用仓库内完全合成样本，clone 后即可跑端到端流程 | 发布前 |
-| `contract_check.py` | 前后端字段契约 | 改接口字段 |
+| 脚本 | 用途 |
+|---|---|
+| `backend/scripts/batch_check.py` | 5 个合成回归用例，并可批量质检指定目录 |
+| `backend/scripts/e2e_check.py` | 上传、识别、复核、入账、账本和导出全流程 |
+| `backend/scripts/contract_check.py` | 核对后端返回字段与前端类型契约 |
+| `backend/scripts/parse_check.py` | 使用本地私有票据检查解析器，不作为公开仓库样本 |
 
-`contract_check.py` 存在的原因：**FastAPI 的 `response_model` 会静默剥离未声明的字段** —— 接口返回 200、字段悄悄没了，TypeScript 编译也发现不了。
+常用命令：
 
-`parse_check.py` 只在本地对 gitignored 的 `素材/` 运行，干净克隆后没有真实样本属于预期行为。
+```powershell
+# 解析器内置回归 + 检查公开样本
+python backend\scripts\batch_check.py backend\testdata\测试发票公开版
 
-**改解析器的强制流程**：先跑回归 → **再逐票 diff `(名称, 规格, 单位, 数量, 金额)`** → 最后才重跑历史票。
+# 后端启动后运行端到端验收
+python backend\scripts\e2e_check.py
 
-为什么不能只跑字段缺失和金额勾稽：曾有一次改动让 12 张票的规格丢字、名称窜行、括号重复，**批量质检依然报「0 失败」**。
+# 后端启动后检查前后端字段契约
+python backend\scripts\contract_check.py
+```
 
----
+公开样本全部由脚本生成，不读取真实票据：
 
-## 技术栈
+```powershell
+python backend\scripts\make_public_samples.py
+```
 
-React 19 · TypeScript · Vite · Tailwind v4 ｜ Python 3.13 · FastAPI · Pydantic v2 · SQLAlchemy 2.0 · SQLite ｜ pypdf · openpyxl ｜ PaddleOCR / RapidOCR / 百度云（可选）
+默认使用 Windows 宋体。其他系统可设置：
 
-## 已知限制
-
-未引入 Alembic（用启动时非破坏性 `ALTER TABLE ADD COLUMN` 代替）· 单用户无多租户 · 异步用 FastAPI BackgroundTasks（量大需换 Celery）· 扫描件 PDF 依赖重量级 OCR
+```powershell
+$env:PUBLIC_SAMPLE_FONT_FILE="path\to\your\cjk-font.ttf"
+python backend\scripts\make_public_samples.py
+```
 
 ## 数据与隐私
 
-默认本地模式不调用云服务、零调用费用。百度云 OCR 是显式可选项：启用后待识别文件会发送给百度；密钥只存后端环境变量，不返回前端、不进日志，并有日调用上限。
+- `data/`、`素材/`、旧版目录和本地数据库均被 `.gitignore` 排除。
+- `backend/testdata/测试发票公开版/` 中的 20 个 PDF 和 8 张图片均为完全合成数据。
+- 公开样本中的公司、税号、日期、项目、型号、数量、单价和金额不对应任何真实票据。
+- 百度云 OCR 只有在配置密钥并显式启用后才会调用。
+- 密钥只从后端环境变量或 `backend/.env` 读取，不返回前端，不写进日志。
 
-真实票据、原始素材、数据库和导出文件全部通过 `.gitignore` 排除。仓库内跟踪的 20 个 PDF 与 8 张图片均由 `make_public_samples.py` 从零生成，项目、型号、数量、单价、金额和购销方信息全部为合成占位数据，不对应任何真实票据。
+如果部署到多人环境，请另行增加身份认证、访问控制和数据库备份策略。V1 默认是单用户本地工具。
+
+## 已知限制
+
+- 暂未引入 Alembic，当前使用启动时非破坏性的 `ALTER TABLE ADD COLUMN` 兼容旧库。
+- 单用户、无多租户、无权限系统。
+- 后台任务使用 FastAPI `BackgroundTasks`，超大批量场景应迁移到 Celery 或 RQ。
+- 扫描件 PDF 和图片票依赖本地 OCR 或云端 OCR，不能只靠文本层解析。
+- 分类规则是关键词规则，面对复杂业务语境仍需要人工调整。
+- 暂不支持 OFD、XML 发票直接导入。
+
+## Roadmap
+
+- [ ] 打包免安装 Windows 绿色版
+- [ ] 增加 OFD/XML 发票读取
+- [ ] 增加 CSV / JSON 导出
+- [ ] 增加备份与一键恢复
+- [ ] 增加票据批量重识别和规则批量重跑
+- [ ] 对大批量任务增加独立队列
+
+## 许可证
+
+当前未授予开源许可。除非后续添加明确许可证，否则保留所有权利。
 
 ---
 
-*个人作品集 · 未授予开源许可*
+个人作品集项目。真实票据、导出文件、数据库和本地映射表不应提交到任何公开仓库。
