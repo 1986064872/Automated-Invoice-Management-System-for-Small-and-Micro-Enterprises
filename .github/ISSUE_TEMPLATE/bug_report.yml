@@ -1,0 +1,64 @@
+name: Bug report
+description: 报告可以稳定复现的问题
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请勿上传真实发票、数据库、企业信息、纳税识别号、银行账号、API Key 或包含敏感信息的日志。
+        可以使用 `backend/testdata/测试发票公开版/` 中的合成样本复现问题。
+  - type: textarea
+    id: summary
+    attributes:
+      label: 问题描述
+      description: 发生了什么，预期是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 启动应用
+        2. 上传合成样本
+        3. 点击...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本或提交
+      placeholder: 例如 3e79556
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响模块
+      options:
+        - OCR / PDF 解析
+        - 图片识别
+        - 上传与批次
+        - 复核工作台
+        - 账本与导出
+        - 设置与规则
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      placeholder: 操作系统、Python、Node、是否启用 PaddleOCR / 百度云
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 脱敏日志
+      description: 请先删除真实票据字段和本机敏感路径。
+      render: text
+    validations:
+      required: false

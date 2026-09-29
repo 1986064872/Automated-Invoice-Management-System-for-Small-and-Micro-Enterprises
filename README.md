@@ -7,6 +7,7 @@
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111111)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)
 ![Local first](https://img.shields.io/badge/Local--first-default-2EA44F)
+![License](https://img.shields.io/badge/License-MIT-green)
 ![Status](https://img.shields.io/badge/Status-V1%20MVP-orange)
 
 **本地运行的发票识别记账工具：上传、识别、校验、复核、入账、导出 Excel。**
@@ -211,6 +212,9 @@ Copy-Item backend\.env.example backend\.env
 常用命令：
 
 ```powershell
+# 只运行 CI 使用的解析器回归用例
+python backend\scripts\batch_check.py --self-test-only
+
 # 解析器内置回归 + 检查公开样本
 python backend\scripts\batch_check.py backend\testdata\测试发票公开版
 
@@ -262,9 +266,15 @@ python backend\scripts\make_public_samples.py
 - [ ] 增加票据批量重识别和规则批量重跑
 - [ ] 对大批量任务增加独立队列
 
+## 贡献与安全
+
+- 提交代码前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+- 安全问题请阅读 [SECURITY.md](./SECURITY.md)，不要在公开 Issue 中粘贴真实票据或密钥。
+- 仓库通过 GitHub Actions 执行后端编译、解析器回归、前端类型检查和构建。
+
 ## 许可证
 
-当前未授予开源许可。除非后续添加明确许可证，否则保留所有权利。
+本项目使用 [MIT License](./LICENSE)。
 
 ---
 

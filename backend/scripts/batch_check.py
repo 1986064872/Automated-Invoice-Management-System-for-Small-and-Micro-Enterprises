@@ -303,6 +303,8 @@ def collect(target: Path) -> list[Path]:
 
 def main() -> int:
     self_test_ok = run_self_test()
+    if "--self-test-only" in sys.argv:
+        return 0 if self_test_ok else 2
 
     root = (
         Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else (PROJECT_DIR / "data" / "uploads")
