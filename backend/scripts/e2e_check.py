@@ -62,6 +62,16 @@ def wait_job(client: httpx.Client, job_id: str, timeout: float = 90.0) -> dict:
     return job
 
 
+def detail_sheet_rows(workbook) -> list[tuple]:
+    rows: list[tuple] = []
+    for name in ("进项发票", "销项发票", "待判断"):
+        if name not in workbook.sheetnames:
+            continue
+        ws = workbook[name]
+        rows.extend(ws.iter_rows(min_row=2, values_only=True))
+    return rows
+
+
 # 本脚本自己上传的测试票据，按原文件名前缀识别
 # （文件名和票面内容都是脚本生成的合成数据，不对应任何真实票据）
 TEST_FILE_PREFIXES = (
@@ -307,6 +317,12 @@ def main() -> int:
         check(again["status"] == "confirmed", "重复确认是幂等的（状态仍为已入账）")
 
     print("\n7) 账本筛选")
+    company = {
+        "name": "示例购买方D有限公司",
+        "tax_id": "91310000MA00000014",
+        "aliases": [],
+    }
+    client.put(f"{BASE}/system/company", json=company).raise_for_status()
     ledger = client.get(f"{BASE}/ledger", params={"status": "confirmed"}).json()
     check(ledger["total"] == len(confirmed_ids), "已入账条数与确认数一致",
           f"账本 {ledger['total']} / 确认 {len(confirmed_ids)}")
@@ -317,6 +333,16 @@ def main() -> int:
     month_ledger = client.get(f"{BASE}/ledger", params={"month": month}).json()
     check(month_ledger["total"] > 0, f"按月份 {month} 筛选可用",
           f"{month_ledger['total']} 条 / ¥{month_ledger['summary']['total_amount']}")
+    input_ledger = client.get(
+        f"{BASE}/ledger",
+        params={"month": month, "direction": "input"},
+    ).json()
+    check(
+        input_ledger["total"] > 0
+        and all(item["direction_text"] == "进项" for item in input_ledger["items"]),
+        "账本可按进项筛选，并返回行级方向",
+        f"{input_ledger['total']} 条",
+    )
 
     print("\n8) Excel 导出（按明细行展开，含单位/数量/单价）")
     payload = {"month": month, "status": "all"}
@@ -332,15 +358,24 @@ def main() -> int:
         from openpyxl import load_workbook
 
         wb = load_workbook(out)
-        ws = wb["费用明细"]
+        check(
+            all(name in wb.sheetnames for name in ("汇总", "进项发票", "待判断", "导出说明")),
+            "导出工作簿已按方向拆分",
+            " / ".join(wb.sheetnames),
+        )
+        detail_sheets = [
+            name for name in ("进项发票", "销项发票", "待判断") if name in wb.sheetnames
+        ]
+        ws = wb[detail_sheets[0]]
         header = [c.value for c in ws[1]]
         expected_header = [
-            "开票日期", "发票类型", "发票代码", "发票号码", "销售方名称", "销售方税号",
+            "开票日期", "发票类型", "发票代码", "发票号码", "往来单位（销售方）", "往来单位税号",
+            "销售方名称", "销售方税号", "购买方名称", "购买方税号",
             "项目名称", "规格型号", "单位", "数量", "单价",
             "不含税金额", "税额", "价税合计", "费用分类", "会计科目", "状态", "原文件名", "备注",
         ]
-        check(header == expected_header, "表头 19 列完全符合约定（含单位/数量/单价）",
-              " / ".join(str(h) for h in header[6:11]))
+        check(header == expected_header, "表头 23 列完全符合约定（含方向/往来单位/购销双方）",
+              " / ".join(str(h) for h in header[4:10]))
         check(ws.freeze_panes == "A2", "首行已冻结")
         check(ws.auto_filter.ref is not None, "已启用筛选", str(ws.auto_filter.ref))
         # 数据驱动地核对：导出应该等于「本月发票展开成明细行」的结果
@@ -348,16 +383,18 @@ def main() -> int:
         expected_rows = sum(max(1, len(i["items"])) for i in matched)
         expected_amount = round(sum((i["amount_without_tax"] or 0) for i in matched), 2)
 
-        rows = list(ws.iter_rows(min_row=2, values_only=True))
+        rows = detail_sheet_rows(wb)
         check(len(rows) == expected_rows, "导出行数 == 本月发票展开的明细行数",
               f"表格 {len(rows)} / 期望 {expected_rows}（{len(matched)} 张票）")
         check(preview["invoice_count"] == len(matched), "预览的发票数正确",
               f"{preview['invoice_count']} vs {len(matched)}")
+        check("by_direction" in preview and preview["company_ready"] is True,
+              "导出预览返回方向统计与企业档案状态")
 
-        units = {r[8] for r in rows}
+        units = {r[12] for r in rows}
         check(units == {"件"}, "单位列取到了票面单位", str(units))
 
-        quantities = sorted(r[9] for r in rows if r[9] is not None)
+        quantities = sorted(r[13] for r in rows if r[13] is not None)
         expected_qty = sorted(
             it["quantity"]
             for i in matched
@@ -366,10 +403,10 @@ def main() -> int:
         )
         check(quantities == expected_qty, "数量列与票面一致", str(quantities))
 
-        check(all(r[10] is not None for r in rows), "单价列有值",
-              "、".join(str(round(r[10], 4)) for r in rows))
+        check(all(r[14] is not None for r in rows), "单价列有值",
+              "、".join(str(round(r[14], 4)) for r in rows))
 
-        item_sum = round(sum((r[11] or 0) for r in rows), 2)
+        item_sum = round(sum((r[15] or 0) for r in rows), 2)
         check(abs(item_sum - expected_amount) < 0.01,
               "明细行金额相加 == 对应发票票面不含税合计",
               f"{item_sum} vs {expected_amount}")
@@ -391,16 +428,19 @@ def main() -> int:
             from openpyxl import load_workbook
             import io as _io
 
-            ws_sel = load_workbook(_io.BytesIO(sel.content))["费用明细"]
-            head = [c.value for c in ws_sel[1]]
-            name_col = head.index("原文件名") + 1
-            got_files = {ws_sel.cell(row=r, column=name_col).value for r in range(2, ws_sel.max_row + 1)}
+            wb_sel = load_workbook(_io.BytesIO(sel.content))
+            got_files = {
+                row[21]
+                for row in detail_sheet_rows(wb_sel)
+                if row[21]
+            }
             check(got_files == pick_files,
                   "勾选导出只含选中的那几张票（不夹带其他票）",
                   f"导出 {sorted(got_files)} / 勾选 {sorted(pick_files)}")
             expect_rows = sum(max(1, len(p["items"])) for p in picked[:2])
-            check(ws_sel.max_row - 1 == expect_rows, "勾选导出的行数 == 选中票的明细行数",
-                  f"{ws_sel.max_row - 1} vs {expect_rows}")
+            got_rows = len(detail_sheet_rows(wb_sel))
+            check(got_rows == expect_rows, "勾选导出的行数 == 选中票的明细行数",
+                  f"{got_rows} vs {expect_rows}")
 
         # 安全边界：传空列表必须是「一张都不导」，绝不能理解成「不过滤 → 导全部」
         empty = client.post(f"{BASE}/exports/excel", json={"status": "all", "invoice_ids": []})

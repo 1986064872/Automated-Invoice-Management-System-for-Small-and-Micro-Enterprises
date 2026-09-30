@@ -6,8 +6,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Invoice
+from ..models import CompanyProfile, Invoice
 from ..schemas import LedgerPage
+from ..services.direction import DIRECTION_ORDER, classify_direction
 from ..services.ledger import build_query, ledger_row, summarise
 
 router = APIRouter(tags=["账本"])
@@ -19,6 +20,7 @@ def get_ledger(
     month: str | None = Query(default=None, description="YYYY-MM"),
     date_from: str | None = None,
     date_to: str | None = None,
+    direction: str | None = None,
     category: str | None = None,
     q: str | None = None,
     page: int = Query(default=1, ge=1),
@@ -35,9 +37,33 @@ def get_ledger(
         q=q,
     ).all()
 
+    company = (
+        db.query(CompanyProfile)
+        .order_by(CompanyProfile.updated_at.desc())
+        .first()
+    )
+
+    direction_map = {
+        row.id: classify_direction(
+            seller_name=row.seller_name,
+            seller_tax_id=row.seller_tax_id,
+            buyer_name=row.buyer_name,
+            buyer_tax_id=row.buyer_tax_id,
+            company_name=company.name if company else None,
+            company_tax_id=company.tax_id if company else None,
+            company_aliases=list(company.aliases or []) if company else None,
+        )
+        for row in rows
+    }
+    if direction in DIRECTION_ORDER:
+        rows = [row for row in rows if direction_map[row.id].direction == direction]
+
     start = (page - 1) * page_size
     return {
-        "items": [ledger_row(row) for row in rows[start : start + page_size]],
+        "items": [
+            ledger_row(row, direction=direction_map[row.id])
+            for row in rows[start : start + page_size]
+        ],
         "summary": summarise(rows),
         "total": len(rows),
         "page": page,

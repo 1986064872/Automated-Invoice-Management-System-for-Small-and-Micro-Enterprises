@@ -9,11 +9,12 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 import httpx
 
-BASE = "http://127.0.0.1:8000/api/v1"
+BASE = os.environ.get("E2E_BASE", "http://127.0.0.1:8000").rstrip("/") + "/api/v1"
 results: list[tuple[bool, str]] = []
 
 
@@ -130,6 +131,8 @@ def main() -> int:
             ledger["items"][0],
             [
                 "id", "invoice_id", "entry_date", "invoice_number", "seller_name", "item_name",
+                "direction", "direction_text", "company_role", "counterparty_name",
+                "counterparty_tax_id", "direction_reason",
                 "amount_without_tax", "tax_amount", "total_amount", "expense_category",
                 "account_subject", "original_name", "status", "error_count", "warning_count", "raw_url",
             ],
@@ -153,13 +156,33 @@ def main() -> int:
     check_keys("system/providers", providers, ["providers", "active"])
     if providers["providers"]:
         check_keys("providers[]", providers["providers"][0], ["name", "display_name", "ready", "note"])
+    company = client.get(f"{BASE}/system/company")
+    if company.status_code == 200 and company.json() is not None:
+        check_keys("system/company", company.json(), ["name", "tax_id", "aliases", "updated_at"])
+    suggestions = client.get(f"{BASE}/system/company/suggestions").json()
+    if suggestions:
+        check_keys(
+            "system/company/suggestions[]",
+            suggestions[0],
+            ["name", "tax_id", "roles", "invoice_count", "buyer_count", "seller_count"],
+        )
 
     # ---------- 导出预览 ----------
     preview = client.get(f"{BASE}/exports/preview", params={"month": "2026-01"}).json()
-    check_keys("exports/preview", preview, ["count", "invoice_count", "total_amount", "file_name"])
+    check_keys(
+        "exports/preview",
+        preview,
+        ["count", "invoice_count", "total_amount", "file_name", "company_ready", "by_direction"],
+    )
+    if preview["by_direction"]:
+        check_keys(
+            "exports/preview.by_direction[]",
+            preview["by_direction"][0],
+            ["direction", "label", "invoice_count", "item_count", "total_amount"],
+        )
 
     # ---------- 原票读取 ----------
-    raw = client.get(f"http://127.0.0.1:8000{invoice['raw_url']}")
+    raw = client.get(f"{BASE.removesuffix('/api/v1')}{invoice['raw_url']}")
     results.append((raw.status_code == 200, "原票可读取（复核工作台左栏依赖它）"))
     if raw.status_code != 200:
         print(f"  [✘] 原票读取失败 HTTP {raw.status_code}")
