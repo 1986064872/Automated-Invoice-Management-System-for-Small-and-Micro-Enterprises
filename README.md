@@ -106,6 +106,15 @@ cd ..
 - 应用地址：<http://127.0.0.1:8000>
 - 接口文档：<http://127.0.0.1:8000/docs>
 
+如果拿到的是预构建试用包，先运行一次：
+
+```powershell
+.\setup.bat
+.\start.bat
+```
+
+`setup.bat` 会创建本机 `.venv`、安装后端依赖，并可选安装 RapidOCR 作为 CPU 图片识别方案。
+
 ### 开发模式
 
 前后端分开运行时：
@@ -171,6 +180,7 @@ React 19 + TypeScript + Vite
 |   `-- src/
 |-- docs/images/          # README 截图
 |-- data/                 # 本地运行数据，默认不提交
+|-- setup.bat             # 预构建试用包初始化脚本
 |-- start.bat
 `-- README.md
 ```
