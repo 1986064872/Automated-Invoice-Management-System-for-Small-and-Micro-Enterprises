@@ -10,7 +10,20 @@ if /I "%~1"=="--no-ocr" set "SKIP_OCR=1"
 
 if not exist "%ROOT%backend\requirements.txt" goto missing_requirement
 if not exist "%ROOT%frontend\dist\index.html" goto missing_frontend
-if exist "%ROOT%.venv\Scripts\python.exe" goto install_dependencies
+
+set "VENV_PY=%ROOT%.venv\Scripts\python.exe"
+if not exist "%ROOT%.venv" goto create_environment
+if not exist "%VENV_PY%" goto recreate_environment
+
+"%VENV_PY%" -c "import sys" >nul 2>nul
+if not errorlevel 1 goto install_dependencies
+
+echo Existing .venv is invalid or was created on another computer.
+echo Recreating the local Python environment...
+
+:recreate_environment
+rmdir /s /q "%ROOT%.venv"
+if exist "%ROOT%.venv" goto failed_remove_environment
 
 set "PY_CMD="
 where py >nul 2>nul
@@ -65,6 +78,12 @@ exit /b 1
 :missing_python
 echo [ERROR] Python 3.11 or newer was not found.
 echo Install Python, then run setup.bat again.
+pause
+exit /b 1
+
+:failed_remove_environment
+echo [ERROR] Could not remove the invalid .venv directory.
+echo Close any running Python process and run setup.bat again.
 pause
 exit /b 1
 
