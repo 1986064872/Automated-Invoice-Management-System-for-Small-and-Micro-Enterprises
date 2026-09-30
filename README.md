@@ -114,6 +114,7 @@ cd ..
 ```
 
 `setup.bat` 会创建本机 `.venv`、安装后端依赖，并可选安装 RapidOCR 作为 CPU 图片识别方案。
+无人值守安装时可使用 `.\setup.bat --no-ocr` 跳过图片 OCR。
 
 ### 开发模式
 
