@@ -3,7 +3,7 @@ setlocal EnableExtensions
 chcp 65001 >nul
 
 set "ROOT=%~dp0"
-set "SETUP_VERSION=2026.09.30-3"
+set "SETUP_VERSION=2026.09.30-4"
 cd /d "%ROOT%"
 
 set "SKIP_OCR="
@@ -31,23 +31,59 @@ if exist "%ROOT%.venv" goto failed_remove_environment
 
 :find_python
 where py >nul 2>nul
-if not errorlevel 1 goto create_with_py
+if not errorlevel 1 goto check_py313
 
 where python >nul 2>nul
-if not errorlevel 1 goto create_with_python
+if not errorlevel 1 goto check_python
 
 goto missing_python
 
-:create_with_py
-echo Creating local Python environment with py...
-py -3 -m venv .venv
-if errorlevel 1 goto failed
+:check_py313
+py -3.13 -c "import sys,venv; assert sys.version_info >= (3,11)" >nul 2>nul
+if not errorlevel 1 goto create_with_py313
+
+:check_py312
+py -3.12 -c "import sys,venv; assert sys.version_info >= (3,11)" >nul 2>nul
+if not errorlevel 1 goto create_with_py312
+
+:check_py311
+py -3.11 -c "import sys,venv; assert sys.version_info >= (3,11)" >nul 2>nul
+if not errorlevel 1 goto create_with_py311
+
+goto check_python
+
+:check_python
+python -c "import sys,venv; assert sys.version_info >= (3,11)" >nul 2>nul
+if not errorlevel 1 goto create_with_python
+
+echo [ERROR] A usable Python 3.11+ with the venv module was not found.
+echo Detected python command:
+python --version
+where python
+goto missing_python
+
+:create_with_py313
+echo Creating local Python environment with Python 3.13...
+py -3.13 -m venv .venv
+if errorlevel 1 goto failed_create_venv
+goto install_dependencies
+
+:create_with_py312
+echo Creating local Python environment with Python 3.12...
+py -3.12 -m venv .venv
+if errorlevel 1 goto failed_create_venv
+goto install_dependencies
+
+:create_with_py311
+echo Creating local Python environment with Python 3.11...
+py -3.11 -m venv .venv
+if errorlevel 1 goto failed_create_venv
 goto install_dependencies
 
 :create_with_python
 echo Creating local Python environment with python...
 python -m venv .venv
-if errorlevel 1 goto failed
+if errorlevel 1 goto failed_create_venv
 
 :install_dependencies
 echo Updating pip...
@@ -86,8 +122,24 @@ pause
 exit /b 1
 
 :missing_python
-echo [ERROR] Python 3.11 or newer was not found.
-echo Install Python, then run setup.bat again.
+echo [ERROR] Install 64-bit Python 3.11 or newer from python.org.
+echo During installation, enable "Add python.exe to PATH".
+echo Do not use the Microsoft Store Python alias for this trial package.
+pause
+exit /b 1
+
+:failed_create_venv
+echo.
+echo [ERROR] Python exists, but creating .venv failed with exit code %ERRORLEVEL%.
+echo Common causes:
+echo   1. Microsoft Store Python is incomplete or points to an App Execution Alias.
+echo   2. Python is older than 3.11 or the venv module is missing.
+echo   3. The package is in a protected or non-writable directory.
+echo.
+echo Recommended fix:
+echo   Install 64-bit Python 3.11+ from python.org, select "Add python.exe to PATH",
+echo   restart Explorer or the computer, then extract this package to a simple path such as:
+echo   C:\InvoiceAssistantTrial
 pause
 exit /b 1
 
