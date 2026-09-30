@@ -20,10 +20,12 @@ import {
   Card,
   CardTitle,
   EmptyState,
+  Field,
   Modal,
   ProgressBar,
   Select,
   Spinner,
+  TextArea,
   TextInput,
 } from '../components/ui'
 import { useAsync } from '../lib/hooks'
@@ -41,6 +43,12 @@ import type { Invoice, LedgerRow } from '../types'
 const PAGE_SIZE = 20
 
 type DateScope = 'all' | 'month' | 'range'
+
+const DIRECTION_CLASS: Record<string, string> = {
+  input: 'bg-blue-50 text-blue-700 ring-blue-200',
+  output: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  unknown: 'bg-amber-50 text-amber-700 ring-amber-200',
+}
 
 /** 明细里金额为负 = 票面的折扣/退货行，用红色（和 Excel 导出一致） */
 function itemAmountClass(value?: number | null): string {
@@ -97,9 +105,9 @@ function InvoiceDetail({ invoice }: { invoice: Invoice }) {
           这张票没有解析出明细行，导出 Excel 时会按票面合计记成一行。
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <div className="max-h-[420px] overflow-auto rounded-lg border border-slate-200 bg-white">
           <table className="w-full text-xs [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
-            <thead className="bg-slate-50 text-slate-500">
+            <thead className="sticky top-0 z-20 bg-slate-50 text-slate-500">
               <tr className="border-b border-slate-200">
                 <th className="px-3 py-1.5 text-left font-medium">#</th>
                 <th className="px-3 py-1.5 text-left font-medium">项目名称</th>
@@ -164,6 +172,7 @@ export default function Ledger() {
   const toast = useToast()
 
   const [status, setStatus] = useState(params.get('status') ?? 'all')
+  const [direction, setDirection] = useState(params.get('direction') ?? '')
   // 默认看全部账目：进页面就应该是「所有票据」，不该先让人去点一下自定义
   const [scope, setScope] = useState<DateScope>(params.get('month') ? 'month' : 'all')
   const [month, setMonth] = useState(params.get('month') ?? currentMonth())
@@ -177,6 +186,14 @@ export default function Ledger() {
   const [confirmRow, setConfirmRow] = useState<LedgerRow | null>(null)
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportTarget, setExportTarget] = useState<{
+    invoiceIds?: string[]
+    label: string
+  }>({ label: '当前筛选' })
+  const [companyName, setCompanyName] = useState('')
+  const [companyTaxId, setCompanyTaxId] = useState('')
+  const [companyAliases, setCompanyAliases] = useState('')
   // 展开看明细：存 invoice_id（同一个 id 在多行里是同一个值，按票展开）。
   // 初始值读地址栏的 ?open=xxx —— 这样明细可以链接直达，刷新也不会收起。
   const [expandedId, setExpandedId] = useState<string | null>(params.get('open'))
@@ -241,28 +258,39 @@ export default function Ledger() {
   const filters = useMemo(
     () => ({
       status,
+      direction: direction || undefined,
       ...dateParams,
       category: category || undefined,
       q: q || undefined,
       page,
       page_size: PAGE_SIZE,
     }),
-    [status, dateParams, category, q, page],
+    [status, direction, dateParams, category, q, page],
   )
 
   const { data, loading, error, reload } = useAsync(() => api.getLedger(filters), [JSON.stringify(filters)])
   const { data: categoryOptions } = useAsync(() => api.categories(), [])
+  const { data: company } = useAsync(() => api.getCompany(), [])
+  const { data: companySuggestions } = useAsync(() => api.companySuggestions(12), [])
+
+  useEffect(() => {
+    if (!company) return
+    setCompanyName(company.name || '')
+    setCompanyTaxId(company.tax_id || '')
+    setCompanyAliases((company.aliases || []).join('\n'))
+  }, [company])
 
   // 导出预览：让按钮上直接显示「几张票 / 几行明细」，点之前就知道会导出什么
   const exportFilters = useMemo(
     () => ({
       status,
+      direction: direction || undefined,
       ...dateParams,
       category: category || undefined,
       q: q || undefined,
       only_confirmed: status === 'confirmed',
     }),
-    [status, dateParams, category, q],
+    [status, direction, dateParams, category, q],
   )
   const { data: preview } = useAsync(
     () => api.exportPreview(exportFilters),
@@ -275,12 +303,18 @@ export default function Ledger() {
 
   useEffect(() => {
     setPage(1)
-  }, [status, scope, month, dateFrom, dateTo, category, q, abnormalOnly])
+  }, [status, direction, scope, month, dateFrom, dateTo, category, q, abnormalOnly])
 
-  const applySearch = () => setQ(searchInput.trim())
+  const applySearch = useCallback(() => {
+    setQ(searchInput.trim())
+    setPage(1)
+    // 即使关键词没变，也强制重新请求一次；按钮点击必须有明确反馈。
+    reload()
+  }, [reload, searchInput])
 
   const resetFilters = () => {
     setStatus('all')
+    setDirection('')
     setScope('all')
     setMonth(currentMonth())
     setDateFrom('')
@@ -292,18 +326,36 @@ export default function Ledger() {
     setParams({})
   }
 
+  const openExport = (invoiceIds?: string[]) => {
+    setExportTarget(
+      invoiceIds && invoiceIds.length > 0
+        ? { invoiceIds, label: `勾选的 ${invoiceIds.length} 张票据` }
+        : { label: '当前筛选' },
+    )
+    setExportOpen(true)
+  }
+
   const doExport = async () => {
+    if (!companyName.trim() && !companyTaxId.trim()) {
+      toast('error', '请先填写当前企业名称或纳税人识别号')
+      return
+    }
     setExporting(true)
     try {
-      const payload = {
-        status,
-        ...dateParams,
-        category: category || undefined,
-        q: q || undefined,
-        only_confirmed: status === 'confirmed',
-      }
+      await api.saveCompany({
+        name: companyName.trim(),
+        tax_id: companyTaxId.trim() || null,
+        aliases: companyAliases
+          .split(/\r?\n|[,，]/)
+          .map((item) => item.trim())
+          .filter(Boolean),
+      })
+      const payload = exportTarget.invoiceIds
+        ? { invoice_ids: exportTarget.invoiceIds }
+        : exportFilters
       await api.exportExcel(payload)
-      toast('success', 'Excel 已开始下载，内容与当前筛选结果一致')
+      toast('success', `Excel 已开始下载，将按方向拆分工作表`)
+      setExportOpen(false)
     } catch (err) {
       toast('error', err instanceof Error ? err.message : String(err))
     } finally {
@@ -392,17 +444,9 @@ export default function Ledger() {
   }, [pageIds])
 
   /** 导出勾选的票据（只导这几张，不再叠加当前筛选条件） */
-  const exportSelected = async () => {
+  const exportSelected = () => {
     if (selected.size === 0) return
-    setExporting(true)
-    try {
-      await api.exportExcel({ invoice_ids: Array.from(selected) })
-      toast('success', `已导出勾选的 ${selected.size} 张票据`)
-    } catch (err) {
-      toast('error', err instanceof Error ? err.message : String(err))
-    } finally {
-      setExporting(false)
-    }
+    openExport(Array.from(selected))
   }
 
   const batchRemove = async () => {
@@ -445,7 +489,7 @@ export default function Ledger() {
           <Button
             size="sm"
             variant="primary"
-            onClick={doExport}
+            onClick={() => openExport()}
             disabled={exporting || (preview?.count ?? 0) === 0}
             title={
               (preview?.count ?? 0) === 0
@@ -527,6 +571,20 @@ export default function Ledger() {
           </div>
 
           <div>
+            <div className="mb-1 text-xs font-medium text-slate-600">票据方向</div>
+            <Select
+              value={direction}
+              onChange={(e) => setDirection(e.target.value)}
+              className="!w-32"
+            >
+              <option value="">全部</option>
+              <option value="input">进项</option>
+              <option value="output">销项</option>
+              <option value="unknown">待判断</option>
+            </Select>
+          </div>
+
+          <div>
             <div className="mb-1 text-xs font-medium text-slate-600">费用分类</div>
             <Select value={category} onChange={(e) => setCategory(e.target.value)} className="!w-40">
               <option value="">全部</option>
@@ -540,17 +598,22 @@ export default function Ledger() {
 
           <div className="min-w-[16rem] flex-1">
             <div className="mb-1 text-xs font-medium text-slate-600">搜索</div>
-            <div className="flex gap-2">
+            <form
+              className="flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault()
+                applySearch()
+              }}
+            >
               <TextInput
                 placeholder="发票号码 / 销售方 / 购买方 / 文件名 / 分类"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && applySearch()}
               />
-              <Button size="md" onClick={applySearch}>
+              <Button size="md" type="submit">
                 <Search size={14} />
               </Button>
-            </div>
+            </form>
           </div>
 
           <div className="flex items-center gap-2 pb-1">
@@ -595,6 +658,15 @@ export default function Ledger() {
         <Alert level="error" title="加载失败">
           {error}
         </Alert>
+      ) : null}
+
+      {company === null ? (
+        <div className="mb-4">
+          <Alert level="warning" title="尚未设置当前企业">
+            进项和销项需要先确定当前企业。可以到“设置 → 企业档案”保存，也可以点击右上角
+            “导出 Excel”直接填写并保存。
+          </Alert>
+        </div>
       ) : null}
 
       {/* ---------------- 表格 ---------------- */}
@@ -644,14 +716,13 @@ export default function Ledger() {
               </div>
             ) : null}
 
-            <div className="overflow-x-auto">
-              {/* 所有单元格强制不换行：否则列一多，费用分类/状态 会被压成竖排单字。
-                  宽度不够时由外层 overflow-x-auto 出横向滚动条，比压扁列好看得多。 */}
+            <div className="max-h-[calc(100vh-320px)] min-h-[420px] overflow-auto overscroll-contain">
+              {/* 表头、左侧日期和右侧操作列冻结；表格本身滚动，避免横向滚动条被长列表推到页面最底部。 */}
               <table className="w-full text-sm [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
-                <thead className="bg-slate-50">
+                <thead className="sticky top-0 z-30 bg-slate-50">
                   <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
                     {/* 勾选列：勾的是 invoice_id，一行一张票 */}
-                    <th className="w-10 px-4 py-2.5">
+                    <th className="sticky left-0 z-40 w-10 bg-slate-50 px-4 py-2.5">
                       <input
                         type="checkbox"
                         aria-label="全选本页"
@@ -663,9 +734,12 @@ export default function Ledger() {
                         className="h-3.5 w-3.5 cursor-pointer accent-brand-600"
                       />
                     </th>
-                    <th className="px-4 py-2.5 font-medium">开票日期</th>
+                    <th className="sticky left-10 z-40 bg-slate-50 px-4 py-2.5 font-medium">
+                      开票日期
+                    </th>
                     <th className="px-3 py-2.5 font-medium">发票号码</th>
-                    <th className="px-3 py-2.5 font-medium">销售方</th>
+                    <th className="px-3 py-2.5 font-medium">票据方向</th>
+                    <th className="px-3 py-2.5 font-medium">往来单位</th>
                     <th className="px-3 py-2.5 font-medium">项目名称</th>
                     <th className="px-3 py-2.5 text-right font-medium">不含税</th>
                     <th className="px-3 py-2.5 text-right font-medium">税额</th>
@@ -673,7 +747,9 @@ export default function Ledger() {
                     <th className="px-3 py-2.5 font-medium">费用分类</th>
                     <th className="px-3 py-2.5 font-medium">会计科目</th>
                     <th className="px-3 py-2.5 font-medium">状态</th>
-                    <th className="px-4 py-2.5 font-medium">操作</th>
+                    <th className="sticky right-0 z-40 min-w-[120px] bg-slate-50 px-4 py-2.5 font-medium shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.55)]">
+                      操作
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -688,7 +764,10 @@ export default function Ledger() {
                             : 'hover:bg-slate-50/60'
                         }`}
                       >
-                      <td className="whitespace-nowrap px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
+                      <td
+                        className="sticky left-0 z-20 whitespace-nowrap bg-white px-4 py-2.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <input
                           type="checkbox"
                           aria-label="选择这张票"
@@ -697,7 +776,7 @@ export default function Ledger() {
                           className="h-3.5 w-3.5 cursor-pointer accent-brand-600"
                         />
                       </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-slate-700">
+                      <td className="sticky left-10 z-20 whitespace-nowrap bg-white px-4 py-2.5 text-slate-700">
                         <span className="inline-flex items-center gap-1.5">
                           <ChevronRight
                             size={13}
@@ -711,8 +790,19 @@ export default function Ledger() {
                       <td className="px-3 py-2.5 font-mono text-xs text-slate-600">
                         {row.invoice_number || '—'}
                       </td>
-                      <td className="max-w-[12rem] truncate px-3 py-2.5 text-slate-700" title={row.seller_name ?? ''}>
-                        {row.seller_name || '—'}
+                      <td className="px-3 py-2.5">
+                        <Badge
+                          className={DIRECTION_CLASS[row.direction] ?? DIRECTION_CLASS.unknown}
+                          title={row.direction_reason}
+                        >
+                          {row.direction_text || '待判断'}
+                        </Badge>
+                      </td>
+                      <td
+                        className="max-w-[12rem] truncate px-3 py-2.5 text-slate-700"
+                        title={row.counterparty_name || row.seller_name || ''}
+                      >
+                        {row.counterparty_name || row.seller_name || '—'}
                       </td>
                       <td className="max-w-[14rem] truncate px-3 py-2.5 text-slate-600" title={row.item_name ?? ''}>
                         {row.item_name || '—'}
@@ -746,7 +836,7 @@ export default function Ledger() {
                           ) : null}
                         </div>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-2.5">
+                      <td className="sticky right-0 z-20 whitespace-nowrap bg-white px-4 py-2.5 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.55)]">
                         {/* stopPropagation：这几个按钮不该触发行展开 */}
                         <div
                           className="flex items-center gap-2 text-xs"
@@ -793,7 +883,7 @@ export default function Ledger() {
                     {/* 展开的明细：点行才拉取，列表本身不带明细 */}
                     {expandedId === row.invoice_id ? (
                       <tr className="border-b border-slate-100">
-                        <td colSpan={12} className="bg-slate-50/70 px-4 py-3">
+                        <td colSpan={13} className="bg-slate-50/70 px-4 py-3">
                           {detailLoading ? (
                             <span className="flex items-center gap-2 text-xs text-slate-400">
                               <Loader2 size={14} className="animate-spin" />
@@ -839,6 +929,115 @@ export default function Ledger() {
       <p className="mt-3 text-xs text-slate-400">
         提示：导出文件名会自动带上月份和条数；金额保留两位小数、日期统一 yyyy-mm-dd、首行冻结并启用筛选。
       </p>
+
+      <Modal
+        open={exportOpen}
+        title="导出票据台账"
+        onClose={() => setExportOpen(false)}
+        footer={
+          <>
+            <Button size="sm" onClick={() => setExportOpen(false)} disabled={exporting}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => void doExport()}
+              disabled={exporting || (!companyName.trim() && !companyTaxId.trim())}
+            >
+              <Download size={13} />
+              {exporting ? '生成中…' : '保存企业档案并导出'}
+            </Button>
+          </>
+        }
+      >
+        <Alert level="info" title="默认按票据方向分工作表">
+          一张工作表只放一个方向，避免把进项和销项混在一起。没有匹配到的票据会进入「待判断」，
+          不会硬分成进项或销项。
+        </Alert>
+
+        {companySuggestions && companySuggestions.length > 0 ? (
+          <div className="mt-4">
+            <div className="mb-2 text-xs font-medium text-slate-600">
+              从已登记票据中快速选择
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {companySuggestions.slice(0, 8).map((item) => {
+                const roleText =
+                  item.roles.includes('buyer') && item.roles.includes('seller')
+                    ? '购买方/销售方'
+                    : item.roles.includes('buyer')
+                      ? '购买方'
+                      : '销售方'
+                return (
+                  <button
+                    key={`${item.name}-${item.tax_id ?? ''}`}
+                    type="button"
+                    onClick={() => {
+                      setCompanyName(item.name)
+                      setCompanyTaxId(item.tax_id || '')
+                      setCompanyAliases('')
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-brand-300 hover:bg-brand-50"
+                  >
+                    <div className="text-xs font-medium text-slate-800">{item.name}</div>
+                    <div className="mt-0.5 text-[11px] text-slate-500">
+                      {roleText} · 出现在 {item.invoice_count} 张票据
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Field label="当前企业名称" hint="例如：南京轩海贸易有限公司">
+            <TextInput
+              value={companyName}
+              placeholder="请填写公司全称"
+              onChange={(e) => setCompanyName(e.target.value)}
+            />
+          </Field>
+          <Field label="纳税人识别号" hint="税号匹配优先级高于名称">
+            <TextInput
+              value={companyTaxId}
+              placeholder="统一社会信用代码 / 纳税人识别号"
+              onChange={(e) => setCompanyTaxId(e.target.value)}
+            />
+          </Field>
+        </div>
+        <Field
+          label="企业别名"
+          hint="每行一个，用于处理 OCR 偏差、历史名称或简称"
+          className="mt-3"
+        >
+          <TextArea
+            rows={3}
+            value={companyAliases}
+            placeholder="例如：轩海贸易"
+            onChange={(e) => setCompanyAliases(e.target.value)}
+          />
+        </Field>
+
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-600">
+          <div>
+            导出范围：<b className="text-slate-800">{exportTarget.label}</b>
+          </div>
+          <div className="mt-1">
+            将生成：汇总 / 进项发票 / 销项发票 / 待判断 / 导出说明。没有数据的工作表不会生成。
+          </div>
+          {!exportTarget.invoiceIds && preview ? (
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+              {preview.by_direction.map((item) => (
+                <span key={item.direction}>
+                  {item.label} {item.invoice_count} 张
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </Modal>
 
       <Modal
         open={Boolean(confirmRow)}

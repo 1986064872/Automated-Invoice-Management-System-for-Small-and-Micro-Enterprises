@@ -3,7 +3,10 @@ import { notifyDataChanged } from './lib/refresh'
 
 import type {
   CategoryRule,
+  CompanyProfile,
+  CompanySuggestion,
   Dashboard,
+  ExportPreview,
   Invoice,
   InvoiceList,
   Job,
@@ -84,6 +87,11 @@ export const api = {
   providers: (deep = false) =>
     request<{ providers: ProviderInfo[]; active: string }>(`/system/providers${qs({ deep })}`),
   config: () => request<Record<string, unknown>>('/system/config'),
+  getCompany: () => request<CompanyProfile | null>('/system/company'),
+  saveCompany: (body: { name: string; tax_id?: string | null; aliases: string[] }) =>
+    request<CompanyProfile>('/system/company', jsonInit('PUT', body)),
+  companySuggestions: (limit = 20) =>
+    request<CompanySuggestion[]>(`/system/company/suggestions${qs({ limit })}`),
 
   // ---------- 上传 ----------
   upload(files: File[], onProgress?: (percent: number) => void): Promise<UploadResult> {
@@ -149,9 +157,7 @@ export const api = {
 
   // ---------- 导出 ----------
   exportPreview: (params: Record<string, unknown>) =>
-    request<{ count: number; invoice_count: number; total_amount: number; file_name: string }>(
-      `/exports/preview${qs(params)}`,
-    ),
+    request<ExportPreview>(`/exports/preview${qs(params)}`),
 
   async exportExcel(params: Record<string, unknown>): Promise<void> {
     const resp = await fetch(`${BASE}/exports/excel`, jsonInit('POST', params))

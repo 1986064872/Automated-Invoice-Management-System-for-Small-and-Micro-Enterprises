@@ -9,7 +9,14 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import get_db
-from ..models import Invoice, InvoiceFile, InvoiceStatus, ProcessingJob, RiskLevel
+from ..models import (
+    CompanyProfile,
+    Invoice,
+    InvoiceFile,
+    InvoiceStatus,
+    ProcessingJob,
+    RiskLevel,
+)
 from ..ocr.baidu import today_usage
 from ..ocr.registry import (
     available_providers,
@@ -18,7 +25,13 @@ from ..ocr.registry import (
     rapidocr_available,
 )
 from ..ocr.paddle_ocr import paddle_env_ready
-from ..schemas import DashboardOut
+from ..schemas import (
+    CompanyProfileIn,
+    CompanyProfileOut,
+    CompanySuggestionOut,
+    DashboardOut,
+)
+from ..services.direction import normalize_name, normalize_tax_id
 from ..services.ledger import month_bounds
 
 router = APIRouter(tags=["首页"])
@@ -117,3 +130,126 @@ def system_config() -> dict:
         "ocr_provider": settings.resolved_ocr_provider,
         # 注意：密钥一律不返回
     }
+
+
+@router.get(
+    "/system/company",
+    response_model=CompanyProfileOut | None,
+    summary="读取当前企业档案",
+)
+def get_company_profile(db: Session = Depends(get_db)) -> dict | None:
+    profile = (
+        db.query(CompanyProfile)
+        .order_by(CompanyProfile.updated_at.desc())
+        .first()
+    )
+    if profile is None:
+        return None
+    return {
+        "name": profile.name,
+        "tax_id": profile.tax_id,
+        "aliases": list(profile.aliases or []),
+        "updated_at": profile.updated_at,
+    }
+
+
+@router.put(
+    "/system/company",
+    response_model=CompanyProfileOut,
+    summary="保存当前企业档案",
+)
+def save_company_profile(
+    payload: CompanyProfileIn,
+    db: Session = Depends(get_db),
+) -> dict:
+    profile = (
+        db.query(CompanyProfile)
+        .order_by(CompanyProfile.updated_at.desc())
+        .first()
+    )
+    if profile is None:
+        profile = CompanyProfile()
+        db.add(profile)
+
+    profile.name = payload.name.strip()
+    profile.tax_id = (payload.tax_id or "").strip() or None
+    aliases = [alias.strip() for alias in payload.aliases if alias.strip()]
+    profile.aliases = list(dict.fromkeys(aliases))
+    db.commit()
+    db.refresh(profile)
+    return {
+        "name": profile.name,
+        "tax_id": profile.tax_id,
+        "aliases": list(profile.aliases or []),
+        "updated_at": profile.updated_at,
+    }
+
+
+@router.get(
+    "/system/company/suggestions",
+    response_model=list[CompanySuggestionOut],
+    summary="根据已登记票据推荐企业主体",
+)
+def company_suggestions(
+    limit: int = Query(default=20, ge=1, le=50),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """从已识别票据的购销双方里生成候选企业，供导出前快速选择。"""
+    rows = db.query(
+        Invoice.seller_name,
+        Invoice.seller_tax_id,
+        Invoice.buyer_name,
+        Invoice.buyer_tax_id,
+    ).all()
+    candidates: dict[str, dict] = {}
+
+    def add_candidate(
+        *,
+        name: str | None,
+        tax_id: str | None,
+        role: str,
+    ) -> None:
+        clean_name = (name or "").strip()
+        clean_tax_id = (tax_id or "").strip() or None
+        if not clean_name and not clean_tax_id:
+            return
+        key = f"tax:{normalize_tax_id(clean_tax_id)}" if clean_tax_id else f"name:{normalize_name(clean_name)}"
+        bucket = candidates.setdefault(
+            key,
+            {
+                "name": clean_name,
+                "tax_id": clean_tax_id,
+                "roles": set(),
+                "invoice_count": 0,
+                "buyer_count": 0,
+                "seller_count": 0,
+            },
+        )
+        if not bucket["name"] and clean_name:
+            bucket["name"] = clean_name
+        if not bucket["tax_id"] and clean_tax_id:
+            bucket["tax_id"] = clean_tax_id
+        if role not in bucket["roles"]:
+            bucket["roles"].add(role)
+        bucket["invoice_count"] += 1
+        bucket[f"{role}_count"] += 1
+
+    for seller_name, seller_tax_id, buyer_name, buyer_tax_id in rows:
+        add_candidate(name=seller_name, tax_id=seller_tax_id, role="seller")
+        add_candidate(name=buyer_name, tax_id=buyer_tax_id, role="buyer")
+
+    ordered = sorted(
+        candidates.values(),
+        key=lambda item: (-item["invoice_count"], item["name"]),
+    )
+    return [
+        {
+            "name": item["name"],
+            "tax_id": item["tax_id"],
+            "roles": sorted(item["roles"]),
+            "invoice_count": item["invoice_count"],
+            "buyer_count": item["buyer_count"],
+            "seller_count": item["seller_count"],
+        }
+        for item in ordered[:limit]
+    ]

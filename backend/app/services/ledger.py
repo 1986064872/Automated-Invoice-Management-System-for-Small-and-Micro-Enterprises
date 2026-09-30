@@ -13,6 +13,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Query, Session, joinedload
 
 from ..models import Invoice, InvoiceFile, InvoiceStatus, LedgerEntry
+from .direction import DirectionResult, classify_direction
 
 STATUS_ALL = "all"
 
@@ -112,12 +113,20 @@ def summarise(invoices: list[Invoice]) -> dict:
     }
 
 
-def ledger_row(inv: Invoice) -> dict:
+def ledger_row(inv: Invoice, *, direction: DirectionResult | None = None) -> dict:
     """账本表格的一行（Excel 导出也用同一份数据）。"""
     entry: LedgerEntry | None = inv.ledger_entry
     inv_file = inv.file
     names = [it.item_name for it in inv.items if it.item_name]
     item_text = "；".join(dict.fromkeys(names))[:512]
+    direction = direction or classify_direction(
+        seller_name=inv.seller_name,
+        seller_tax_id=inv.seller_tax_id,
+        buyer_name=inv.buyer_name,
+        buyer_tax_id=inv.buyer_tax_id,
+        company_name=None,
+        company_tax_id=None,
+    )
     return {
         "id": inv.id,
         "invoice_id": inv.id,
@@ -128,6 +137,12 @@ def ledger_row(inv: Invoice) -> dict:
         "seller_name": inv.seller_name,
         "seller_tax_id": inv.seller_tax_id,
         "buyer_name": inv.buyer_name,
+        "direction": direction.direction,
+        "direction_text": direction.direction_text,
+        "company_role": direction.company_role,
+        "counterparty_name": direction.counterparty_name,
+        "counterparty_tax_id": direction.counterparty_tax_id,
+        "direction_reason": direction.reason,
         "item_name": item_text,
         "amount_without_tax": inv.amount_without_tax,
         "tax_amount": inv.tax_amount,
@@ -150,7 +165,13 @@ def ledger_row(inv: Invoice) -> dict:
     }
 
 
-def export_rows(invoices: list[Invoice]) -> list[dict]:
+def export_rows(
+    invoices: list[Invoice],
+    *,
+    company_name: str | None = None,
+    company_tax_id: str | None = None,
+    company_aliases: list[str] | None = None,
+) -> list[dict]:
     """导出用：把发票**展开到明细行**，一行一条明细。
 
     为什么按明细行展开？
@@ -168,6 +189,15 @@ def export_rows(invoices: list[Invoice]) -> list[dict]:
         inv_file = inv.file
         items = list(inv.items) if inv.items else [None]
         item_count = len([it for it in items if it is not None])
+        direction = classify_direction(
+            seller_name=inv.seller_name,
+            seller_tax_id=inv.seller_tax_id,
+            buyer_name=inv.buyer_name,
+            buyer_tax_id=inv.buyer_tax_id,
+            company_name=company_name,
+            company_tax_id=company_tax_id,
+            company_aliases=company_aliases,
+        )
 
         for index, item in enumerate(items):
             has_item = item is not None
@@ -192,6 +222,13 @@ def export_rows(invoices: list[Invoice]) -> list[dict]:
                     "seller_name": inv.seller_name,
                     "seller_tax_id": inv.seller_tax_id,
                     "buyer_name": inv.buyer_name,
+                    "buyer_tax_id": inv.buyer_tax_id,
+                    "direction": direction.direction,
+                    "direction_text": direction.direction_text,
+                    "company_role": direction.company_role,
+                    "counterparty_name": direction.counterparty_name,
+                    "counterparty_tax_id": direction.counterparty_tax_id,
+                    "direction_reason": direction.reason,
                     "item_name": (item.item_name if has_item else "") or "",
                     "specification": (item.specification if has_item else "") or "",
                     "unit": (item.unit if has_item else "") or "",
@@ -208,6 +245,7 @@ def export_rows(invoices: list[Invoice]) -> list[dict]:
                     # 备注格要不要高亮（导出时用）。见 _should_highlight_note
                     "note_highlight": _should_highlight_note(inv, item),
                     # 供前端/脚本判断分组，导出时不会写成列
+                    "_invoice_id": inv.id,
                     "_first_of_invoice": index == 0,
                     "_item_count": item_count,
                 }

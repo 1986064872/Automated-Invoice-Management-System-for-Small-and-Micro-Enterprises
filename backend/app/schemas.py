@@ -85,6 +85,7 @@ class ExportRequest(BaseModel):
     date_from: str | None = None
     date_to: str | None = None
     status: str = "all"
+    direction: str | None = None
     category: str | None = None
     q: str | None = None
     only_confirmed: bool = False
@@ -92,6 +93,28 @@ class ExportRequest(BaseModel):
     # 只导出勾选的这些票（账本批量导出）。None = 不加这个条件；
     # 空列表 = 一张都不导（不是「全部」，别搞反）。
     invoice_ids: list[str] | None = None
+
+
+class CompanyProfileIn(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    tax_id: str | None = Field(default=None, max_length=32)
+    aliases: list[str] = Field(default_factory=list)
+
+
+class CompanyProfileOut(BaseModel):
+    name: str
+    tax_id: str | None = None
+    aliases: list[str] = Field(default_factory=list)
+    updated_at: datetime | None = None
+
+
+class CompanySuggestionOut(BaseModel):
+    name: str
+    tax_id: str | None = None
+    roles: list[str] = []
+    invoice_count: int = 0
+    buyer_count: int = 0
+    seller_count: int = 0
 
 
 class BatchDeleteRequest(BaseModel):
@@ -226,6 +249,12 @@ class LedgerEntryOut(BaseModel):
     seller_name: str | None = None
     seller_tax_id: str | None = None
     buyer_name: str | None = None
+    direction: str = "unknown"
+    direction_text: str = "待判断"
+    company_role: str = ""
+    counterparty_name: str = ""
+    counterparty_tax_id: str = ""
+    direction_reason: str = ""
     item_name: str | None = None
     amount_without_tax: float | None = None
     tax_amount: float | None = None

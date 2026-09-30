@@ -292,3 +292,26 @@ class CategoryRule(Base):
     __table_args__ = (
         Index("ix_rule_lookup", "enabled", "rule_type", "priority"),
     )
+
+
+# --------------------------------------------------------------------------
+# 表 7：当前企业档案
+# --------------------------------------------------------------------------
+class CompanyProfile(Base):
+    """用于判断进项/销项的当前企业。
+
+    V1 只保存一条当前企业记录；后续要支持代账多主体时，可以把这里扩成多行并加
+    `is_default` 筛选，不需要改发票表。
+    """
+
+    __tablename__ = "company_profile"
+
+    id = Column(String(36), primary_key=True, default=new_id)
+    name = Column(String(255), nullable=False)
+    tax_id = Column(String(32), index=True)
+    aliases = Column(JSON, default=list)
+    is_default = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
+    )

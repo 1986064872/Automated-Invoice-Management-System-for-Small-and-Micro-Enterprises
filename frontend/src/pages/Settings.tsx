@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ArrowDown,
   ArrowUp,
@@ -24,6 +24,7 @@ import {
   Modal,
   Select,
   Spinner,
+  TextArea,
   TextInput,
 } from '../components/ui'
 import { useAsync } from '../lib/hooks'
@@ -42,7 +43,7 @@ const EMPTY_FORM = {
 
 export default function SettingsPage() {
   const toast = useToast()
-  const [tab, setTab] = useState<'rules' | 'ocr'>('rules')
+  const [tab, setTab] = useState<'company' | 'rules' | 'ocr'>('company')
   const [typeFilter, setTypeFilter] = useState('')
   const [search, setSearch] = useState('')
   const [form, setForm] = useState({ ...EMPTY_FORM })
@@ -52,6 +53,10 @@ export default function SettingsPage() {
   const [testResult, setTestResult] = useState<{ expense_category: string; rule_source: string } | null>(null)
   const [deepCheck, setDeepCheck] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [companyName, setCompanyName] = useState('')
+  const [companyTaxId, setCompanyTaxId] = useState('')
+  const [companyAliases, setCompanyAliases] = useState('')
+  const [savingCompany, setSavingCompany] = useState(false)
 
   const {
     data: rules,
@@ -63,6 +68,14 @@ export default function SettingsPage() {
   )
   const { data: options } = useAsync(() => api.ruleOptions(), [])
   const { data: providers, reload: reloadProviders } = useAsync(() => api.providers(false), [deepCheck])
+  const { data: company, reload: reloadCompany } = useAsync(() => api.getCompany(), [])
+
+  useEffect(() => {
+    if (!company) return
+    setCompanyName(company.name || '')
+    setCompanyTaxId(company.tax_id || '')
+    setCompanyAliases((company.aliases || []).join('\n'))
+  }, [company])
 
   const openCreate = () => {
     setForm({ ...EMPTY_FORM })
@@ -152,6 +165,30 @@ export default function SettingsPage() {
     }
   }
 
+  const saveCompany = async () => {
+    if (!companyName.trim() && !companyTaxId.trim()) {
+      toast('error', '企业名称和纳税人识别号至少填一个')
+      return
+    }
+    setSavingCompany(true)
+    try {
+      await api.saveCompany({
+        name: companyName.trim(),
+        tax_id: companyTaxId.trim() || null,
+        aliases: companyAliases
+          .split(/\r?\n|[,，]/)
+          .map((item) => item.trim())
+          .filter(Boolean),
+      })
+      toast('success', '企业档案已保存')
+      reloadCompany()
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : String(err))
+    } finally {
+      setSavingCompany(false)
+    }
+  }
+
   const customCount = (rules ?? []).filter((r) => r.rule_type === 'custom').length
   const systemCount = (rules ?? []).filter((r) => r.rule_type === 'system').length
 
@@ -160,13 +197,14 @@ export default function SettingsPage() {
       <div className="mb-5">
         <h1 className="text-xl font-semibold text-slate-900">设置</h1>
         <p className="mt-1 text-sm text-slate-500">
-          费用分类规则与 OCR 供应商。规则命中顺序：企业自定义优先，其次系统内置
+          企业档案、费用分类规则与 OCR 供应商
         </p>
       </div>
 
       <div className="mb-4 flex gap-1 rounded-lg bg-slate-100 p-1">
         {(
           [
+            ['company', '企业档案'],
             ['rules', '费用分类规则'],
             ['ocr', 'OCR 与识别'],
           ] as const
@@ -183,7 +221,61 @@ export default function SettingsPage() {
         ))}
       </div>
 
-      {tab === 'rules' ? (
+      {tab === 'company' ? (
+        <Card>
+          <CardTitle
+            title="当前企业档案"
+            subtitle="用于判断进项发票和销项发票；保存后账本与导出都会使用这里的设置"
+            right={
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => void saveCompany()}
+                disabled={savingCompany || (!companyName.trim() && !companyTaxId.trim())}
+              >
+                {savingCompany ? '保存中…' : '保存企业档案'}
+              </Button>
+            }
+          />
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="当前企业名称" hint="公司全称，例如：南京轩海贸易有限公司">
+              <TextInput
+                value={companyName}
+                placeholder="请填写公司全称"
+                onChange={(e) => setCompanyName(e.target.value)}
+              />
+            </Field>
+            <Field label="纳税人识别号" hint="有税号时优先按税号匹配，准确率更高">
+              <TextInput
+                value={companyTaxId}
+                placeholder="统一社会信用代码 / 纳税人识别号"
+                onChange={(e) => setCompanyTaxId(e.target.value)}
+              />
+            </Field>
+          </div>
+
+          <Field
+            label="企业别名"
+            hint="每行一个，用于兼容 OCR 偏差、历史名称或简称"
+            className="mt-3"
+          >
+            <TextArea
+              rows={4}
+              value={companyAliases}
+              placeholder="例如：轩海贸易"
+              onChange={(e) => setCompanyAliases(e.target.value)}
+            />
+          </Field>
+
+          <div className="mt-4">
+            <Alert level="info">
+              发票购买方匹配当前企业时归入进项，销售方匹配当前企业时归入销项。以后修改这里，
+              已登记票据会按新档案重新判断。
+            </Alert>
+          </div>
+        </Card>
+      ) : tab === 'rules' ? (
         <>
           <Card className="mb-4">
             <CardTitle

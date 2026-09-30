@@ -140,6 +140,12 @@ export interface LedgerRow {
   seller_name?: string | null
   seller_tax_id?: string | null
   buyer_name?: string | null
+  direction: 'input' | 'output' | 'unknown'
+  direction_text: string
+  company_role: string
+  counterparty_name: string
+  counterparty_tax_id: string
+  direction_reason: string
   item_name?: string | null
   amount_without_tax?: number | null
   tax_amount?: number | null
@@ -219,8 +225,40 @@ export interface ProviderInfo {
   detail?: string
 }
 
+export interface ExportPreview {
+  count: number
+  invoice_count: number
+  total_amount: number
+  file_name: string
+  company_ready: boolean
+  by_direction: Array<{
+    direction: 'input' | 'output' | 'unknown'
+    label: string
+    invoice_count: number
+    item_count: number
+    total_amount: number
+  }>
+}
+
+export interface CompanyProfile {
+  name: string
+  tax_id?: string | null
+  aliases: string[]
+  updated_at?: string | null
+}
+
+export interface CompanySuggestion {
+  name: string
+  tax_id?: string | null
+  roles: Array<'buyer' | 'seller'>
+  invoice_count: number
+  buyer_count: number
+  seller_count: number
+}
+
 export interface LedgerFilters {
   status?: string
+  direction?: string
   month?: string
   date_from?: string
   date_to?: string

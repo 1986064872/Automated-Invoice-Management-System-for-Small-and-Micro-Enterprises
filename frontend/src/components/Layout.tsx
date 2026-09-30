@@ -9,7 +9,7 @@ const NAV = [
   { to: '/tickets', label: '票据中心', icon: Upload, desc: '上传与批次' },
   { to: '/review', label: '复核工作台', icon: FileText, desc: '逐张确认' },
   { to: '/ledger', label: '账本', icon: BookOpen, desc: '查询与导出' },
-  { to: '/settings', label: '设置', icon: SettingsIcon, desc: '分类规则' },
+  { to: '/settings', label: '设置', icon: SettingsIcon, desc: '企业档案与规则' },
 ]
 
 export default function Layout() {
