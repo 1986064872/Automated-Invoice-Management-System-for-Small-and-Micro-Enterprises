@@ -3,16 +3,20 @@ setlocal EnableExtensions
 chcp 65001 >nul
 
 set "ROOT=%~dp0"
+set "SETUP_VERSION=2026.09.30-3"
 cd /d "%ROOT%"
 
 set "SKIP_OCR="
 if /I "%~1"=="--no-ocr" set "SKIP_OCR=1"
 
+echo Invoice Assistant setup %SETUP_VERSION%
+echo.
+
 if not exist "%ROOT%backend\requirements.txt" goto missing_requirement
 if not exist "%ROOT%frontend\dist\index.html" goto missing_frontend
 
 set "VENV_PY=%ROOT%.venv\Scripts\python.exe"
-if not exist "%ROOT%.venv" goto create_environment
+if not exist "%ROOT%.venv" goto find_python
 if not exist "%VENV_PY%" goto recreate_environment
 
 "%VENV_PY%" -c "import sys" >nul 2>nul
@@ -25,18 +29,24 @@ echo Recreating the local Python environment...
 rmdir /s /q "%ROOT%.venv"
 if exist "%ROOT%.venv" goto failed_remove_environment
 
-set "PY_CMD="
+:find_python
 where py >nul 2>nul
-if not errorlevel 1 set "PY_CMD=py -3"
-if defined PY_CMD goto create_environment
+if not errorlevel 1 goto create_with_py
 
 where python >nul 2>nul
-if not errorlevel 1 set "PY_CMD=python"
-if not defined PY_CMD goto missing_python
+if not errorlevel 1 goto create_with_python
 
-:create_environment
-echo Creating local Python environment...
-%PY_CMD% -m venv .venv
+goto missing_python
+
+:create_with_py
+echo Creating local Python environment with py...
+py -3 -m venv .venv
+if errorlevel 1 goto failed
+goto install_dependencies
+
+:create_with_python
+echo Creating local Python environment with python...
+python -m venv .venv
 if errorlevel 1 goto failed
 
 :install_dependencies
